@@ -27,6 +27,11 @@ assert.equal(seedTree.root.id, 'root');
 assert.equal(seedTree.positions.get('root').x, 450, 'the root should be centered');
 assert.ok(seedTree.positions.get('root').y > 180, 'the root should sit in the lower tree zone');
 assert.ok(seedTree.trunk && seedTree.trunk.forkY < seedTree.trunk.rootY, 'a seed still needs a visible bole and an upper trunk fork');
+assert.ok(seedTree.trunk.boleWidth >= 18, 'the sparse bole should be visibly substantial');
+assert.ok(seedTree.trunk.rootFlare && seedTree.trunk.rootFlare.length >= 2, 'the sparse tree should be visibly planted with a root flare');
+assert.equal(seedTree.trunk.buds.length, 2, 'the sapling should expose two visible leaf-bud anchors');
+assert.ok(seedTree.trunk.buds.some((bud) => bud.side === 'left') && seedTree.trunk.buds.some((bud) => bud.side === 'right'), 'buds should exist on both sides of the sapling');
+assert.notEqual(Math.abs(seedTree.trunk.buds[0].x - seedTree.trunk.x), Math.abs(seedTree.trunk.buds[1].x - seedTree.trunk.x), 'sapling buds should be asymmetrically placed');
 assertConnected(seedTree, seed);
 
 const sapling = [node('root', 0), node('leaf-a', 1, 'root')];

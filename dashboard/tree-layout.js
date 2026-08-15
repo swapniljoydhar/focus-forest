@@ -127,6 +127,20 @@ export function layoutTree(inputNodes = []) {
     if (!crowded || candidate.nodeId === rootId) labels.push(candidate);
   });
 
+  const sparse = mode === 'seed' || mode === 'sapling';
+  const rootY = positions.get(rootId).y;
+  const rootFlare = sparse ? [
+    { side: 'left', d: `M${(CENTER_X - 5).toFixed(2)} ${config.baseY.toFixed(2)} C${(CENTER_X - 18).toFixed(2)} ${(config.baseY - 2).toFixed(2)}, ${(CENTER_X - 28).toFixed(2)} ${(config.baseY - 13).toFixed(2)}, ${(CENTER_X - 42).toFixed(2)} ${(config.baseY - 9).toFixed(2)}` },
+    { side: 'right', d: `M${(CENTER_X + 5).toFixed(2)} ${config.baseY.toFixed(2)} C${(CENTER_X + 19).toFixed(2)} ${(config.baseY - 1).toFixed(2)}, ${(CENTER_X + 31).toFixed(2)} ${(config.baseY - 12).toFixed(2)}, ${(CENTER_X + 48).toFixed(2)} ${(config.baseY - 6).toFixed(2)}` }
+  ] : [];
+  const shoots = sparse ? [
+    { side: 'left', d: `M${(CENTER_X - 7).toFixed(2)} ${(forkY + 22).toFixed(2)} C${(CENTER_X - 11).toFixed(2)} ${(forkY + 5).toFixed(2)}, ${(CENTER_X - 24).toFixed(2)} ${(forkY - 15).toFixed(2)}, ${(CENTER_X - 38).toFixed(2)} ${(forkY - 32).toFixed(2)}` },
+    { side: 'right', d: `M${(CENTER_X + 5).toFixed(2)} ${(forkY + 18).toFixed(2)} C${(CENTER_X + 18).toFixed(2)} ${(forkY + 2).toFixed(2)}, ${(CENTER_X + 26).toFixed(2)} ${(forkY - 21).toFixed(2)}, ${(CENTER_X + 54).toFixed(2)} ${(forkY - 43).toFixed(2)}` }
+  ] : [];
+  const buds = sparse ? [
+    { side: 'left', x: CENTER_X - 38, y: forkY - 32, angle: -54, scale: 0.9 },
+    { side: 'right', x: CENTER_X + 54, y: forkY - 43, angle: 28, scale: 1.05 }
+  ] : [];
   return {
     mode,
     width: VIEWBOX_WIDTH,
@@ -138,7 +152,7 @@ export function layoutTree(inputNodes = []) {
     children,
     edges,
     labels,
-    trunk: { x: CENTER_X, baseY: config.baseY, rootY: positions.get(rootId).y, forkY, primaryY, shootY: mode === 'seed' ? forkY - 28 : null },
+    trunk: { x: CENTER_X, baseY: config.baseY, rootY, forkY, primaryY, shootY: mode === 'seed' ? forkY - 28 : null, boleWidth: sparse ? 26 : 22, rootFlare, shoots, buds },
     parentAnchors,
     maxDepth
   };

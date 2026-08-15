@@ -28,6 +28,7 @@ assert.match(popup, /render\(\)\.catch/, 'popup startup must show a recovery sta
 assert.match(newtab, /init\(\)\.catch/, 'New Tab startup must show a recovery state when messaging fails');
 assert.match(content, /showGrowthRitual/, 'companion branch growth should use an explicit bounded ritual');
 assert.match(content, /ff-growth-ritual/, 'companion ritual should have a named visual state');
+assert.match(content, /waitForGrowth\(1000/, 'companion ritual should hold the completion flicker for one second before notifying');
 assert.match(content, /prefers-reduced-motion/, 'companion ritual should respect reduced-motion preferences');
 assert.equal(/setInterval\(/.test(content), false, 'companion ritual must not introduce a continuous timer loop');
 console.log('static security contracts passed');

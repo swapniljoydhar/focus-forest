@@ -27,3 +27,11 @@ The one-node state now has a centered root, a visible upward shoot, a distinct c
 ## Interaction pass
 
 Activating the root SVG group opens the selected-path detail panel, applies the visible selected outline, and exposes the existing root-safe action copy. The browser reports the SVG group as a keyboard-accessible button with an accessible label. The detail panel remains visually attached to the tree card and does not disrupt the surrounding trail-notes or compost panels.
+
+## Organic sapling pass — 2026-08-15
+
+The sparse seed fixture now reads as a young planted sapling rather than a vertical stack of capsules. It has a continuous filled bole, a lower root flare, a short unequal left shoot, a taller right shoot, and two attached leaf-bud silhouettes. The asymmetry is visible at browser scale and the trunk remains centered beneath the mission-root node. The remaining red dashed boxes in the fixture screenshot are browser inspection annotations, not extension UI.
+
+## Populated-tree regression after sapling pass — 2026-08-15
+
+The deep representative fixture remains connected after the sparse sapling rewrite. The central root, horizontal primary limbs, upward secondary branches, saved/pruned dashed paths, and terminal leaf shapes are still visible. The organic sapling additions are limited to seed and sapling modes, so deeper sessions retain their existing branch hierarchy and accessibility labels.
