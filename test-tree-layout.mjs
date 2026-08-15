@@ -34,7 +34,7 @@ const saplingTree = layoutTree(sapling);
 assert.equal(saplingTree.mode, 'sapling');
 assertConnected(saplingTree, sapling);
 assert.ok(saplingTree.edges[0].path.includes('C'), 'a child edge should be curved rather than a straight graph connector');
-assert.ok(saplingTree.edges[0].path.startsWith(`M450.00 ${(saplingTree.trunk.forkY - 10).toFixed(2)}`), 'primary limbs should begin at the trunk fork');
+assert.ok(saplingTree.edges[0].path.startsWith(`M450.00 ${saplingTree.trunk.forkY.toFixed(2)}`), 'primary limbs should begin at the trunk fork');
 assert.ok(saplingTree.positions.get('leaf-a').y < saplingTree.positions.get('root').y, 'growth should rise upward');
 
 const canopy = [
@@ -48,6 +48,9 @@ assert.equal(canopyTree.mode, 'canopy');
 assertConnected(canopyTree, canopy);
 assert.ok(canopyTree.positions.get('left').x < canopyTree.positions.get('root').x);
 assert.ok(canopyTree.positions.get('right').x > canopyTree.positions.get('root').x);
+assert.equal(canopyTree.positions.get('left').y, canopyTree.positions.get('right').y, 'primary limbs should share a horizontal branch level');
+assert.equal(canopyTree.edges.filter((edge) => edge.depth === 1).every((edge) => edge.kind === 'primary'), true, 'first-level edges should be explicit primary limbs');
+assert.ok(canopyTree.parentAnchors.get('left').y < canopyTree.positions.get('left').y, 'primary leaves should orient from the upper trunk fork');
 assert.ok(canopyTree.positions.get('right-tip').y < canopyTree.positions.get('right').y);
 assert.ok(canopyTree.edges.every((edge) => edge.width > 0), 'branches should taper with a positive width');
 

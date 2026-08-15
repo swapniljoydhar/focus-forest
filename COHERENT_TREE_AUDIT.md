@@ -28,3 +28,10 @@ The renderer now uses a centered lower root, a visible bole, a deterministic tru
 The SVG is now built with `createElementNS()`, `textContent`, and `replaceChildren()` rather than `innerHTML`. A temporary browser-scale fixture was checked with deep, saved/pruned, seed, and selected-root states. The populated fixture reads as a rooted tree with a central bole and connected canopy; the seed fixture reads as a young sapling. Automated layout, static security, service-worker, stress, and syntax checks pass.
 
 The remaining limitation is intentional: visual acceptance was performed with a representative fixture rather than a live Chrome session containing real browsing history. Real-profile checks for restricted pages, SPA navigation, redirects, and browser-specific scale remain separate runtime coverage.
+
+
+## Reference-driven refinement — 2026-08-15
+
+The supplied references establish a more specific visual target than a generic canopy: a centered root and short bole, a horizontal primary limb junction, two sparse organic side branches, and terminal leaf tips. The dashboard now exposes explicit `primary` and `secondary` edge kinds. First-level paths share a stable horizontal branch level and originate at the trunk fork; deeper paths rise from their real parent branches. This keeps the tree legible at sparse session depths and avoids turning every node into an equal graph vertex.
+
+The companion follows the same grammar at miniature scale. When a newly observed deeper node is confirmed, the chip briefly changes to a growing state, animates a tiny stem and two leaves, flickers for approximately one second, and then settles on the ordinary related-branch or long-branch notification. The ritual is bounded, cancellable, contained inside the existing chip dimensions, skipped under reduced-motion preferences, and does not use a timer loop or block the page.

@@ -34,6 +34,11 @@ function labelPlacement(point, nodeId, root = false) {
 function edgePath(parent, child, depth, nodeId) {
   const dx = child.x - parent.x;
   const bend = Math.abs(dx) < 12 ? ((String(nodeId).length % 2 ? 1 : -1) * 18) : 0;
+  if (depth === 1) {
+    const c1x = parent.x + dx * 0.36;
+    const c2x = child.x - dx * 0.24;
+    return `M${parent.x.toFixed(2)} ${parent.y.toFixed(2)} C${c1x.toFixed(2)} ${(parent.y + 2).toFixed(2)}, ${c2x.toFixed(2)} ${(child.y - 2).toFixed(2)}, ${child.x.toFixed(2)} ${child.y.toFixed(2)}`;
+  }
   const rise = Math.max(28, parent.y - child.y);
   const c1x = parent.x + dx * 0.16 + bend;
   const c2x = child.x - dx * 0.18 + bend;
@@ -48,6 +53,7 @@ export function layoutTree(inputNodes = []) {
   const root = nodes.find((node) => depthOf(node) === 0) || nodes[0];
   const rootId = root.id;
   const parentById = new Map();
+  const parentAnchors = new Map();
   const children = new Map();
 
   nodes.forEach((node) => {
@@ -72,6 +78,8 @@ export function layoutTree(inputNodes = []) {
   const mode = modeFor(nodes, maxDepth);
   const config = MODES[mode];
   const positions = new Map([[rootId, { x: CENTER_X, y: config.baseY - 28 }]]);
+  const primaryY = config.baseY - config.gap + 8;
+  const forkY = primaryY - 8;
   const edges = [];
 
   function placeChildren(parentId, left, right, depth) {
@@ -84,18 +92,18 @@ export function layoutTree(inputNodes = []) {
       const inset = Math.min(24, Math.max(8, span * 0.12));
       const childLeft = cursor + inset;
       const childRight = cursor + span - inset;
-      const point = { x: clamp((childLeft + childRight) / 2, MIN_X, MAX_X), y: config.baseY - depth * config.gap };
+      const point = { x: clamp((childLeft + childRight) / 2, MIN_X, MAX_X), y: depth === 1 ? primaryY : config.baseY - depth * config.gap };
       positions.set(child.id, point);
       const parent = positions.get(parentId) || positions.get(rootId);
       const branchOrigin = parentId === rootId ? { x: CENTER_X, y: forkY } : parent;
-      edges.push({ nodeId: child.id, parentId, path: edgePath(branchOrigin, point, depth, child.id), width: branchWidth(depth), depth });
+      parentAnchors.set(child.id, branchOrigin);
+      edges.push({ nodeId: child.id, parentId, path: edgePath(branchOrigin, point, depth, child.id), width: branchWidth(depth), depth, kind: depth === 1 ? 'primary' : 'secondary' });
       const childSpan = Math.max(34, (childRight - childLeft) * 0.88);
       placeChildren(child.id, point.x - childSpan / 2, point.x + childSpan / 2, depth + 1);
       cursor += span;
     });
   }
 
-  const forkY = positions.get(rootId).y - Math.min(110, config.gap * 0.68);
   placeChildren(rootId, MIN_X, MAX_X, 1);
   nodes.forEach((node, index) => {
     if (positions.has(node.id)) return;
@@ -104,7 +112,9 @@ export function layoutTree(inputNodes = []) {
     const point = { x: clamp(parent.x + ((index % 3) - 1) * 24, MIN_X, MAX_X), y: parent.y - config.gap };
     positions.set(node.id, point);
     const branchOrigin = parentId === rootId ? { x: CENTER_X, y: forkY } : parent;
-    edges.push({ nodeId: node.id, parentId, path: edgePath(branchOrigin, point, depthOf(node), node.id), width: branchWidth(depthOf(node)), depth: depthOf(node) });
+    parentAnchors.set(node.id, branchOrigin);
+    const depth = depthOf(node);
+    edges.push({ nodeId: node.id, parentId, path: edgePath(branchOrigin, point, depth, node.id), width: branchWidth(depth), depth, kind: depth === 1 ? 'primary' : 'secondary' });
   });
 
   const labelCandidates = nodes
@@ -128,7 +138,8 @@ export function layoutTree(inputNodes = []) {
     children,
     edges,
     labels,
-    trunk: { x: CENTER_X, baseY: config.baseY, rootY: positions.get(rootId).y, forkY, shootY: mode === 'seed' ? forkY - 28 : null },
+    trunk: { x: CENTER_X, baseY: config.baseY, rootY: positions.get(rootId).y, forkY, primaryY, shootY: mode === 'seed' ? forkY - 28 : null },
+    parentAnchors,
     maxDepth
   };
 }
