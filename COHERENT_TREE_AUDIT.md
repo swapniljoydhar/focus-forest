@@ -19,4 +19,12 @@ Every rendered non-root node must have a visible parent edge to either its direc
 
 ## Scope
 
-The redesign remains local and dependency-free. It changes the dashboard renderer and styles, the empty-state SVG, the New Tab viewport safety rules, and the care dialog sizing. It does not change navigation semantics, storage schema, privacy behavior, or service-worker authority.
+The redesign remains local and dependency-free. It changes the dashboard renderer and styles, adds a small deterministic `dashboard/tree-layout.js` module and focused layout tests, and rewrites both populated and empty SVG states through safe DOM construction. It does not change navigation semantics, storage schema, privacy behavior, or service-worker authority.
+
+## 2026-08-15 refinement result
+
+The renderer now uses a centered lower root, a visible bole, a deterministic trunk-fork anchor, weighted left/right primary limbs, upward secondary branches, tapering branch widths, and terminal leaf shapes attached to real session nodes. Missing or self-referential parents resolve to the root, so every visible non-root node receives a connected edge. The seed mode adds a trunk-tied shoot and crown bud instead of presenting only a circle. Labels are selected through a deterministic spacing pass and are suppressed when they would compete with neighboring branches; selected-node context remains available in the detail panel.
+
+The SVG is now built with `createElementNS()`, `textContent`, and `replaceChildren()` rather than `innerHTML`. A temporary browser-scale fixture was checked with deep, saved/pruned, seed, and selected-root states. The populated fixture reads as a rooted tree with a central bole and connected canopy; the seed fixture reads as a young sapling. Automated layout, static security, service-worker, stress, and syntax checks pass.
+
+The remaining limitation is intentional: visual acceptance was performed with a representative fixture rather than a live Chrome session containing real browsing history. Real-profile checks for restricted pages, SPA navigation, redirects, and browser-specific scale remain separate runtime coverage.
