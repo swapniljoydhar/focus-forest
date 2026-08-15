@@ -17,5 +17,5 @@
     "run_at": "document_idle",
     "all_frames": false
   }],
-  "web_accessible_resources": [{ "resources": ["content/content.css"], "matches": ["http://*/*", "https://*/*"] }]
+  "web_accessible_resources": []
 }

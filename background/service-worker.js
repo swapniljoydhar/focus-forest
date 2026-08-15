@@ -3,6 +3,9 @@ import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, canonicalUrl, compactTe
 const pendingBranches = new Map();
 const MAX_PENDING_BRANCHES = 64;
 function prunePendingBranches() { const now = Date.now(); for (const [key, entry] of pendingBranches) if (now - entry.createdAt >= 15000) pendingBranches.delete(key); while (pendingBranches.size > MAX_PENDING_BRANCHES) pendingBranches.delete(pendingBranches.keys().next().value); }
+function pendingBranchKey(url, sourceTabId) { return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${url}`; }
+function setPendingBranch(url, sourceTabId, parentId) { prunePendingBranches(); const key = pendingBranchKey(url, sourceTabId); pendingBranches.set(key, { url, sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null, parentId, createdAt: Date.now() }); }
+function takePendingBranch(url, sourceTabId) { prunePendingBranches(); const exact = pendingBranches.get(pendingBranchKey(url, sourceTabId)); if (exact) { pendingBranches.delete(pendingBranchKey(url, sourceTabId)); return exact; } const candidates = [...pendingBranches.entries()].filter(([, entry]) => entry.url === url && entry.sourceTabId == null); if (candidates.length !== 1) return null; pendingBranches.delete(candidates[0][0]); return candidates[0][1]; }
 const NO_CHANGE = Symbol('no-change');
 
 let mutationQueue = Promise.resolve();
@@ -89,9 +92,10 @@ async function createSession(mission, tab) {
     }
     const originUrl = safeOriginUrl(tab?.url);
     const title = compactText(tab?.title || 'New Tab');
+    const originTabId = Number.isInteger(tab?.id) ? tab.id : null;
     const session = {
       id: makeId('session'), mission: cleanMission, status: 'active', startedAt: Date.now(), endedAt: null, endReason: null,
-      origin: { tabId: tab?.id ?? null, url: originUrl, title }, nodes: [], events: [], pendingRedirects: [], interventionPaused: false
+      origin: { tabId: originTabId, url: originUrl, title }, nodes: [], events: [], pendingRedirects: [], interventionPaused: false
     };
     pushNode(session, { id: makeId('node'), tabIds: Number.isInteger(tab?.id) ? [tab.id] : [], url: originUrl, title, parentId: null, depth: 0, firstSeenAt: Date.now(), relationshipConfidence: 'direct', state: 'normal' });
     addEvent(session, 'mission_started', { mission: session.mission });
@@ -123,7 +127,7 @@ async function trackLink({ tabId, url, title, targetBlank = false }) {
     if (existing) return NO_CHANGE;
     if (targetBlank || isRedirectLike(destination)) {
       prunePendingBranches();
-      if (targetBlank) pendingBranches.set(destination, { parentId: parent.id, createdAt: Date.now() });
+      if (targetBlank) setPendingBranch(destination, tabId, parent.id);
       if (isRedirectLike(destination)) setPendingRedirect(session, tabId, parent.id);
       addEvent(session, 'link_opened', { url: destination, depth: parent.depth + 1 });
       return { pending: true, parentId: parent.id, redirect: isRedirectLike(destination) };
@@ -154,9 +158,8 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId) {
     if (known) { clearPendingRedirect(session, tabId); moveTabToNode(session, tabId, known.id); const attached = attachTab(known, tabId); known.title = title; if (attached) addEvent(session, 'tab_joined_path', { nodeId: known.id, url }); else addEvent(session, 'return_to_path', { nodeId: known.id, url }); return known; }
     const opener = openerTabId && nodeForTab(session, openerTabId);
     prunePendingBranches();
-    const pending = pendingBranches.get(url);
-    const pendingParent = pending && Date.now() - pending.createdAt < 15000 ? session.nodes.find((node) => node.id === pending.parentId) : null;
-    pendingBranches.delete(url);
+    const pending = takePendingBranch(url, Number.isInteger(openerTabId) ? openerTabId : tabId);
+    const pendingParent = pending ? session.nodes.find((node) => node.id === pending.parentId) : null;
     const redirectParent = pendingRedirectParent(session, tabId);
     if (isRedirectLike(url) && (pendingParent || redirectParent || current)) {
       setPendingRedirect(session, tabId, (pendingParent || redirectParent || current).id);
@@ -200,7 +203,7 @@ async function compost(tabId, rawUrl, title) {
       state.compostItems.unshift({ id: makeId('compost'), url, title: compactText(title || url), mission: session.mission, depth: node?.depth || 0, savedAt: Date.now() });
       if (state.compostItems.length > LIMITS.COMPOST) state.compostItems.splice(LIMITS.COMPOST);
     }
-    if (node) { node.state = 'composted'; node.closedAt = Date.now(); }
+    if (node) { node.state = 'composted'; node.closedAt = Date.now(); node.tabIds = []; delete node.tabId; }
     addEvent(session, 'composted', { url }); return true;
   });
 }
@@ -215,8 +218,9 @@ async function getSnapshot(sessionId = null, includeHistory = false) {
 chrome.runtime.onInstalled.addListener(() => { chrome.storage.local.get(STORAGE_KEY).then((result) => { if (!result[STORAGE_KEY]) chrome.storage.local.set({ [STORAGE_KEY]: emptyState() }); }); });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (!isRecord(message) || typeof message.type !== 'string') { sendResponse(null); return false; }
   (async () => {
-    const tab = sender.tab;
+    const tab = sender && typeof sender === 'object' && sender.tab && typeof sender.tab === 'object' ? sender.tab : null;
     switch (message.type) {
       case 'GET_SNAPSHOT': return getSnapshot(safeId(message.sessionId) || null, Boolean(message.includeHistory));
       case 'GET_ACTIVE_VIEW': return activeView(await loadState(), tab?.id);
@@ -233,7 +237,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'CLEAR_DATA': return replaceState(emptyState());
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null;
-        if (originTabId) { try { await chrome.tabs.update(originTabId, { active: true }); } catch { const returnUrl = /^chrome-extension:\/\//.test(origin?.url || '') || safeHttpUrl(origin?.url); if (returnUrl) await chrome.tabs.create({ url: returnUrl, active: true }); } }
+        if (originTabId) { try { const returnUrl = safeHttpUrl(origin?.url) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(origin?.url || '') ? origin.url : null); await chrome.tabs.update(originTabId, returnUrl ? { url: returnUrl, active: true } : { active: true }); } catch { const returnUrl = safeHttpUrl(origin?.url) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(origin?.url || '') ? origin.url : null); if (returnUrl) await chrome.tabs.create({ url: returnUrl, active: true }); } }
         return activeView(await loadState(), originTabId);
       }
       default: return null;
