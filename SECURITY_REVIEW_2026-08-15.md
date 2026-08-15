@@ -54,6 +54,18 @@ Source: [Chrome Declare Permissions](https://developer.chrome.com/docs/extension
 
 Source: [Chrome Permissions API](https://developer.chrome.com/docs/extensions/reference/api/permissions)
 
+### Residual navigation and multi-window research
+
+Chrome documents that tab IDs are unique within a browser session, that `openerTabId` is present only while the opener still exists, and that `tabs.get()` can retrieve the current tab record. It also documents that `tabs.update()` can navigate and activate a tab, while window focus is a separate concern. The remediation therefore revalidates the stored origin tab with `tabs.get()`, compares the current safe URL, and focuses the live origin window before activation. If the identity is stale, it opens a new safe origin tab instead of targeting a reused tab.
+
+Source: [Chrome Tabs API](https://developer.chrome.com/docs/extensions/reference/api/tabs)
+
+The same research confirms that optional host permissions are the supported way to reduce access when functionality permits, but Focus Forest’s core companion contract is all-web HTTP(S) operation. This pass removes the redundant `tabs` permission, while retaining the broad host/content-script scope as an explicit product boundary rather than silently breaking the companion.
+
+Source: [Chrome Declare Permissions](https://developer.chrome.com/docs/extensions/develop/concepts/declare-permissions)
+
+Source: [Chrome Permissions API](https://developer.chrome.com/docs/extensions/reference/api/permissions)
+
 ### DOM sink alternatives
 
 Trusted Types can enforce that HTML sinks receive a policy-produced value, but the extension currently uses deterministic escaping and has a minimum Chrome version of 110. A broad Trusted Types CSP change could break existing extension-page rendering and is not automatically safer than replacing data-bearing `innerHTML` with DOM construction. The audit will compare both approaches and prefer the smallest dependency-free fix supported by the actual code and test environment.
@@ -62,7 +74,7 @@ Source: [MDN Trusted Types API](https://developer.mozilla.org/en-US/docs/Web/API
 
 ## Implemented and verified in this pass
 
-The following findings were confirmed with failing fixtures and then fixed: null or non-object runtime messages are ignored safely; target-blank pending branches are keyed by source tab and destination; composted nodes detach all live tab aliases; Go Home navigates a same-tab journey back to the stored safe origin without closing tabs; sender tab IDs are normalized; synthetic page-dispatched clicks are ignored; the companion uses a closed ShadowRoot with inlined static CSS; and the unused web-accessible stylesheet/resource declaration was removed. The focused behavior suite, static security contracts, syntax checks, and the stress harness all pass.
+The following findings were confirmed with failing fixtures and then fixed: the redundant `tabs` permission was removed; null or non-object runtime messages are ignored safely; target-blank pending branches are keyed by source tab and destination; composted nodes detach all live tab aliases; Go Home navigates a same-tab journey back to the stored safe origin without closing tabs; sender tab IDs are normalized; synthetic page-dispatched clicks are ignored; the companion uses a closed ShadowRoot with inlined static CSS; and the unused web-accessible stylesheet/resource declaration was removed. The focused behavior suite, static security contracts, syntax checks, and the stress harness all pass.
 
 The stress harness issued 500 concurrent observations, 300 concurrent settings updates, 200 null messages, and 200 array messages. The resulting state remained bounded at 96 nodes and 72 events, preserved threshold ordering, and contained only safe URLs.
 

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 const store = {};
 const messages = [];
 const tabActions = [];
+const windowActions = [];
+const tabInfo = new Map();
 const listeners = { installed: [], message: [], updated: [], removed: [] };
 
 globalThis.chrome = {
@@ -16,18 +18,21 @@ globalThis.chrome = {
     onInstalled: { addListener(fn) { listeners.installed.push(fn); } },
     onMessage: { addListener(fn) { listeners.message.push(fn); } }
   },
+  windows: { async update(id, patch) { windowActions.push(['update', id, patch]); } },
   tabs: {
     onUpdated: { addListener(fn) { listeners.updated.push(fn); } },
     onRemoved: { addListener(fn) { listeners.removed.push(fn); } },
     async remove(id) { tabActions.push(['remove', id]); },
-    async update(id, patch) { tabActions.push(['update', id, patch]); },
-    async create(info) { tabActions.push(['create', info]); return { id: 99, ...info }; }
+    async get(id) { const tab = tabInfo.get(id); if (!tab) throw new Error('No tab'); return structuredClone({ id, windowId: 1, ...tab }); },
+    async update(id, patch) { const next = { ...(tabInfo.get(id) || { id, windowId: 1 }), ...patch }; tabInfo.set(id, next); tabActions.push(['update', id, patch]); },
+    async create(info) { const id = 99 + tabInfo.size; tabInfo.set(id, { id, windowId: 1, ...info }); tabActions.push(['create', info]); return { id, ...info }; }
   }
 };
 
 await import('./background/service-worker.js');
 const handler = listeners.message[0];
 async function send(message, tab = undefined) {
+  if (tab?.id != null) { const current = { ...(tabInfo.get(tab.id) || {}), windowId: 1, ...tab }; if (message?.type === 'OBSERVE_PAGE' && typeof message.url === 'string') { current.url = message.url; current.title = message.title || current.title; } tabInfo.set(tab.id, current); }
   return await new Promise((resolve, reject) => {
     handler(message, { tab }, (response) => response?.error ? reject(new Error(response.error)) : resolve(response));
   });
@@ -117,7 +122,7 @@ await send({ type: 'OBSERVE_PAGE', url: 'https://history.example', title: 'Histo
 assert.equal(session().nodes.length, nodeCountBeforeReturn, 'returning to a known URL should reuse its node');
 await send({ type: 'GO_HOME' });
 assert.equal(tabActions.some((a) => a[0] === 'remove'), false, 'Go Home must not close tracked tabs automatically');
-const goHomeUpdate = tabActions.find((a) => a[0] === 'update' && a[1] === 7);
+const goHomeUpdate = tabActions.findLast((a) => a[0] === 'update' && a[1] === 7);
 assert(goHomeUpdate, 'Go Home should activate origin tab');
 assert.equal(goHomeUpdate[2].url, 'https://history.example/', 'Go Home should return the origin tab to its stored origin URL');
 await send({ type: 'END_MISSION', reason: 'user_ended' });
@@ -152,7 +157,8 @@ assert.equal(concurrentSnapshot.thresholds.INTERRUPT >= concurrentSnapshot.thres
 await listeners.removed[0](31);
 tabActions.length = 0;
 await send({ type: 'GO_HOME' });
-assert.equal(tabActions.some((action) => action[0] === 'update' || action[0] === 'create'), false, 'stale origin removal must not target a reused tab');
+assert.equal(tabActions.some((action) => action[0] === 'update'), false, 'stale origin removal must not target a reused tab');
+assert.equal(tabActions.some((action) => action[0] === 'create' && action[1].url === 'https://safe.example/'), true, 'stale origin removal should recover with a safe new origin tab');
 
 await assert.doesNotReject(() => send(null), 'null runtime messages must be ignored safely');
 await send({ type: 'CLEAR_DATA' });
@@ -177,5 +183,30 @@ await send({ type: 'OBSERVE_PAGE', url: 'https://alias.example', title: 'Alias d
 await send({ type: 'COMPOST', url: 'https://alias.example', title: 'Alias' }, { id: 201 });
 const closedAliasNode = session().nodes.find((node) => node.url === 'https://alias.example/');
 assert.deepEqual(closedAliasNode.tabIds, [], 'composting a path must detach every live tab alias');
+
+await send({ type: 'CLEAR_DATA' });
+await send({ type: 'START_MISSION', mission: 'Reused origin', tab: { id: 300, url: 'https://origin.example/home', title: 'Origin' } });
+tabInfo.set(300, { id: 300, windowId: 1, url: 'https://unrelated.example/reused', title: 'Unrelated' });
+tabActions.length = 0;
+await send({ type: 'GO_HOME' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 300), false, 'Go Home must not target an unrelated tab that reused the origin ID');
+assert.equal(tabActions.some((action) => action[0] === 'create' && action[1].url === 'https://origin.example/home'), true, 'Go Home should create a safe origin tab when the stored tab identity is stale');
+await send({ type: 'CLEAR_DATA' });
+await send({ type: 'START_MISSION', mission: 'Redirect reuse', tab: { id: 400, url: 'chrome-extension://test/newtab/index.html', title: 'New Tab' } });
+await send({ type: 'OBSERVE_PAGE', url: 'https://redirect-origin.example', title: 'Redirect origin' }, { id: 400 });
+await send({ type: 'LINK_CLICK', url: 'https://redirect.example/redirect?target=https%3A%2F%2Ffinal.example', title: 'Redirect', targetBlank: false }, { id: 400 });
+assert.equal(session().pendingRedirects.length, 1, 'redirect should create pending state');
+await listeners.removed[0](400);
+assert.equal(session().pendingRedirects.length, 0, 'tab removal must clear pending redirect state');
+const beforeReusedTab = session().nodes.length;
+await send({ type: 'OBSERVE_PAGE', url: 'https://reused.example', title: 'Reused tab' }, { id: 400 });
+assert.equal(session().nodes.length, beforeReusedTab, 'a reused tab must not inherit a removed tab redirect relationship');
+await send({ type: 'CLEAR_DATA' });
+await send({ type: 'START_MISSION', mission: 'Other window', tab: { id: 500, url: 'chrome-extension://test/newtab/index.html', title: 'New Tab' } });
+await send({ type: 'OBSERVE_PAGE', url: 'https://window-two.example/home', title: 'Window two' }, { id: 500 });
+tabInfo.set(500, { id: 500, windowId: 2, url: 'https://window-two.example/home', title: 'Window two' });
+tabActions.length = 0; windowActions.length = 0;
+await send({ type: 'GO_HOME' });
+assert.equal(windowActions.some((action) => action[0] === 'update' && action[1] === 2 && action[2].focused === true), true, 'Go Home should focus the origin window');
 
 console.log('service-worker behavioral tests passed');

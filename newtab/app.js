@@ -17,6 +17,8 @@ async function init() {
   input.focus();
 }
 
+function initSafely() { return init().catch(() => { status.textContent = 'The forest could not read its local garden. You can still browse without a mission.'; input.focus(); }); }
+
 input.addEventListener('input', updateCount);
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -33,4 +35,4 @@ resume.addEventListener('click', async () => { await message('GO_HOME'); status.
 browse.addEventListener('click', async () => { await message('END_MISSION', { reason: 'browse_without_mission' }); window.location.href = 'https://www.google.com'; });
 
 updateCount();
-init();
+initSafely();

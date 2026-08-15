@@ -51,6 +51,8 @@ function isRecord(value) { return value && typeof value === 'object' && !Array.i
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : null; }
 function safeReason(value) { return ['user_ended', 'mission_changed', 'browse_without_mission'].includes(value) ? value : 'user_ended'; }
 function safeOriginUrl(value) { const raw = String(value || ''); return safeHttpUrl(raw) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) ? raw.slice(0, LIMITS.URL) : 'chrome://newtab'); }
+function safeNavigationUrl(value) { const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http; if (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) || raw === 'chrome://newtab') return raw.slice(0, LIMITS.URL); return null; }
+function sameOriginUrl(actual, expected) { const expectedHttp = safeHttpUrl(expected); return expectedHttp ? safeHttpUrl(actual) === expectedHttp : String(actual || '') === String(expected || ''); }
 
 function addEvent(session, type, payload = {}) {
   session.events.push({ id: makeId('event'), type, at: Date.now(), ...payload });
@@ -95,7 +97,7 @@ async function createSession(mission, tab) {
     const originTabId = Number.isInteger(tab?.id) ? tab.id : null;
     const session = {
       id: makeId('session'), mission: cleanMission, status: 'active', startedAt: Date.now(), endedAt: null, endReason: null,
-      origin: { tabId: originTabId, url: originUrl, title }, nodes: [], events: [], pendingRedirects: [], interventionPaused: false
+      origin: { tabId: originTabId, windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null, url: originUrl, title }, nodes: [], events: [], pendingRedirects: [], interventionPaused: false
     };
     pushNode(session, { id: makeId('node'), tabIds: Number.isInteger(tab?.id) ? [tab.id] : [], url: originUrl, title, parentId: null, depth: 0, firstSeenAt: Date.now(), relationshipConfidence: 'direct', state: 'normal' });
     addEvent(session, 'mission_started', { mission: session.mission });
@@ -141,7 +143,7 @@ async function trackLink({ tabId, url, title, targetBlank = false }) {
   });
 }
 
-async function observeTab(tabId, rawUrl, rawTitle, openerTabId) {
+async function observeTab(tabId, rawUrl, rawTitle, openerTabId, windowId) {
   const url = safeHttpUrl(rawUrl);
   const title = compactText(rawTitle || url);
   return mutate((state) => {
@@ -151,7 +153,7 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId) {
     if (seed) {
       const root = session.nodes[0];
       attachTab(root, tabId); root.url = url; root.title = title; root.firstSeenAt = Date.now(); root.relationshipConfidence = 'direct';
-      session.origin = { tabId, url, title }; addEvent(session, 'origin_planted', { url }); return root;
+      session.origin = { tabId, windowId: Number.isInteger(windowId) ? windowId : session.origin?.windowId || null, url, title }; addEvent(session, 'origin_planted', { url }); return root;
     }
     if (current && current.url === url) return NO_CHANGE;
     const known = session.nodes.find((node) => node.url === url && !node.closedAt);
@@ -227,7 +229,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, message.tab || tab) : null;
       case 'END_MISSION': return endSession(safeReason(message.reason));
       case 'LINK_CLICK': return Number.isInteger(tab?.id) ? trackLink({ tabId: tab.id, url: message.url, title: message.title, targetBlank: Boolean(message.targetBlank) }) : null;
-      case 'OBSERVE_PAGE': return Number.isInteger(tab?.id) ? observeTab(tab.id, message.url, message.title, tab.openerTabId) : null;
+      case 'OBSERVE_PAGE': return Number.isInteger(tab?.id) ? observeTab(tab.id, message.url, message.title, tab.openerTabId, tab.windowId) : null;
       case 'COMPOST': return Number.isInteger(tab?.id) ? compost(tab.id, message.url, message.title) : null;
       case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }) : null;
       case 'UPDATE_SETTINGS': return isRecord(message.settings) ? mutate((state) => { const next = normalizeSettings({ ...state.settings, ...message.settings }); if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE; state.settings = next; const session = activeSession(state); if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); }); return state.settings; }) : null;
@@ -236,9 +238,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'DELETE_SESSION': return safeId(message.sessionId) ? mutate((state) => { const before = state.sessions.length; state.sessions = state.sessions.filter((session) => session.id !== message.sessionId); if (state.activeSessionId === message.sessionId) state.activeSessionId = null; return before === state.sessions.length ? NO_CHANGE : state.sessions; }) : null;
       case 'CLEAR_DATA': return replaceState(emptyState());
       case 'GO_HOME': {
-        const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null;
-        if (originTabId) { try { const returnUrl = safeHttpUrl(origin?.url) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(origin?.url || '') ? origin.url : null); await chrome.tabs.update(originTabId, returnUrl ? { url: returnUrl, active: true } : { active: true }); } catch { const returnUrl = safeHttpUrl(origin?.url) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(origin?.url || '') ? origin.url : null); if (returnUrl) await chrome.tabs.create({ url: returnUrl, active: true }); } }
-        return activeView(await loadState(), originTabId);
+        const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
+        let returnedToOrigin = false;
+        if (originTabId && returnUrl) {
+          try {
+            const liveTab = await chrome.tabs.get(originTabId);
+            if (sameOriginUrl(liveTab?.url, origin.url)) { if (chrome.windows?.update && Number.isInteger(liveTab.windowId)) await chrome.windows.update(liveTab.windowId, { focused: true }); await chrome.tabs.update(originTabId, { url: returnUrl, active: true }); returnedToOrigin = true; }
+          } catch { returnedToOrigin = false; }
+        }
+        if (!returnedToOrigin && returnUrl) await chrome.tabs.create({ url: returnUrl, active: true });
+        return activeView(await loadState(), returnedToOrigin ? originTabId : null);
       }
       default: return null;
     }
@@ -246,5 +255,5 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => { if (changeInfo.status === 'complete' && tab.url) await observeTab(tabId, tab.url, tab.title, tab.openerTabId); });
-chrome.tabs.onRemoved.addListener(async (tabId) => { await mutate((state) => { const session = activeSession(state); if (!session) return NO_CHANGE; let changed = false; if (session.origin?.tabId === tabId) { session.origin.tabId = null; changed = true; } const node = nodeForTab(session, tabId); if (!node || node.closedAt) return changed ? session : NO_CHANGE; detachTab(node, tabId); if (!node.tabIds?.length) node.closedAt = Date.now(); return node; }); });
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => { if (changeInfo.status === 'complete' && tab.url) await observeTab(tabId, tab.url, tab.title, tab.openerTabId, tab.windowId); });
+chrome.tabs.onRemoved.addListener(async (tabId) => { await mutate((state) => { const session = activeSession(state); if (!session) return NO_CHANGE; let changed = false; if (session.origin?.tabId === tabId) { session.origin.tabId = null; changed = true; } const pendingBefore = (session.pendingRedirects || []).length; clearPendingRedirect(session, tabId); if (session.pendingRedirects.length !== pendingBefore) changed = true; const node = nodeForTab(session, tabId); if (!node || node.closedAt) return changed ? session : NO_CHANGE; detachTab(node, tabId); if (!node.tabIds?.length) node.closedAt = Date.now(); return node; }); });

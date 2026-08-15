@@ -31,13 +31,15 @@ async function render() {
   const pause = document.querySelector('#pause'); pause.textContent = session.interventionPaused ? 'Resume the forest' : 'Pause interventions'; pause.setAttribute('aria-pressed', String(Boolean(session.interventionPaused)));
 }
 
+function renderSafely() { return render().catch(() => { latest = null; active.hidden = true; completion.hidden = true; footer.hidden = true; empty.hidden = false; }); }
+
 document.querySelector('#return').addEventListener('click', () => message('GO_HOME'));
-document.querySelector('#pause').addEventListener('click', async () => { const snap = await message('GET_SNAPSHOT'); await message('PAUSE_INTERVENTION', { paused: !snap.session.interventionPaused }); render(); });
+document.querySelector('#pause').addEventListener('click', async () => { const snap = await message('GET_SNAPSHOT'); await message('PAUSE_INTERVENTION', { paused: !snap.session.interventionPaused }); renderSafely(); });
 document.querySelector('#dashboard').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') }));
 document.querySelector('#settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
 document.querySelector('#end').addEventListener('click', () => { if (!latest) return; ritualReturnFocus = document.querySelector('#end'); const reflection = reflectionFor(latest); document.querySelector('#completion-copy').textContent = reflection.copy; document.querySelector('#completion-title').textContent = reflection.deepest >= 4 ? 'This garden has a long path to remember.' : 'This garden can rest now.'; active.hidden = true; setRitual(true); });
-document.querySelector('#complete').addEventListener('click', async () => { await message('END_MISSION', { reason: 'user_ended' }); ritualReturnFocus = null; render(); });
+document.querySelector('#complete').addEventListener('click', async () => { await message('END_MISSION', { reason: 'user_ended' }); ritualReturnFocus = null; renderSafely(); });
 document.querySelector('#keep').addEventListener('click', () => { active.hidden = false; setRitual(false); });
 document.querySelector('#review').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') }));
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !completion.hidden) { active.hidden = false; setRitual(false); } });
-render();
+renderSafely();
