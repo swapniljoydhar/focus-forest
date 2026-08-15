@@ -40,12 +40,6 @@ The garden dashboard renders the deterministic session graph as a living rooted 
 
 The dashboard tree uses native SVG and CSS transitions only. It does not run a frame loop, use Canvas, download images, or add a rendering dependency. Its horizontal lanes scale to the garden’s actual maximum depth, branch strokes become quieter with depth, and labels yield when a lane becomes crowded while remaining available through node semantics and the selected-path panel. Reduced-motion preferences disable the growth transitions. The New Tab uses only short entrance motion; it has no continuous CSS animation loops and can scroll safely on short viewports so the recovery choices are not clipped.
 
-## Quick paths on the New Tab
-
-Focus Forest recreates the useful shape of Chrome’s New Tab shortcuts as a small local shortcut garden below the mission ritual. Each path is a circular tile with a label and hostname; it opens in the current tab, and the **Add**, **Edit**, and **Remove** controls are keyboard-accessible. Shortcut records are stored locally, capped at 12 items, deduplicated by canonical HTTP(S) URL, and rejected for unsafe schemes such as `javascript:` or `data:`.
-
-These are Focus Forest’s own local shortcuts rather than Chrome’s hidden native shortcut database. A normal New Tab override cannot directly render or manage Chrome’s native tiles, so the extension intentionally provides a transparent equivalent that does not read browsing history, request page content, use remote favicons, or add network calls. The shortcut shelf is placed below the planting ritual so the mission remains the primary action.
-
 ## History and tab behavior
 
 Returning to a known URL reuses its canonical garden node. If Chrome opens a duplicate tab on a known path, Focus Forest attaches the new tab as an alias instead of creating a deeper branch. Closing one alias does not erase the path while another attached tab remains. Go Home activates the validated origin without closing tracked or unrelated tabs. Composting also preserves the current page; it changes only the local branch state.

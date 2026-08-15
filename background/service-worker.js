@@ -48,8 +48,6 @@ function isRecord(value) { return value && typeof value === 'object' && !Array.i
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : null; }
 function safeReason(value) { return ['user_ended', 'mission_changed', 'browse_without_mission'].includes(value) ? value : 'user_ended'; }
 function safeOriginUrl(value) { const raw = String(value || ''); return safeHttpUrl(raw) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) ? raw.slice(0, LIMITS.URL) : 'chrome://newtab'); }
-function shortcutRecord(input, existing = null) { const url = safeHttpUrl(input?.url); if (!url) return null; let hostname = url; try { hostname = new URL(url).hostname; } catch {} return { id: existing?.id || safeId(input?.id) || makeId('shortcut'), label: compactText(input?.label || existing?.label || hostname, 40), url, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now() }; }
-async function saveShortcut(input) { return mutate((state) => { const current = state.shortcuts || []; const existing = safeId(input?.id) ? current.find((item) => item.id === input.id) : current.find((item) => item.url === safeHttpUrl(input?.url)); const item = shortcutRecord(input, existing); if (!item) return NO_CHANGE; if (existing) { Object.assign(existing, item); return existing; } if (current.length >= LIMITS.SHORTCUTS) return { capped: true }; state.shortcuts = [item, ...current].slice(0, LIMITS.SHORTCUTS); return item; }); }
 
 function addEvent(session, type, payload = {}) {
   session.events.push({ id: makeId('event'), type, at: Date.now(), ...payload });
@@ -221,9 +219,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const tab = sender.tab;
     switch (message.type) {
       case 'GET_SNAPSHOT': return getSnapshot(safeId(message.sessionId) || null, Boolean(message.includeHistory));
-      case 'GET_SHORTCUTS': return (await loadState()).shortcuts || [];
-      case 'SAVE_SHORTCUT': return isRecord(message.shortcut) ? saveShortcut(message.shortcut) : null;
-      case 'DELETE_SHORTCUT': return safeId(message.id) ? mutate((state) => { const before = state.shortcuts?.length || 0; state.shortcuts = (state.shortcuts || []).filter((item) => item.id !== message.id); return before === state.shortcuts.length ? NO_CHANGE : state.shortcuts; }) : null;
       case 'GET_ACTIVE_VIEW': return activeView(await loadState(), tab?.id);
       case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, message.tab || tab) : null;
       case 'END_MISSION': return endSession(safeReason(message.reason));
