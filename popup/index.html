@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Focus Forest</title><link rel="stylesheet" href="style.css"></head>
+<body>
+  <div class="popup-ambient" aria-hidden="true"><span></span><span></span></div>
+  <main class="popup-shell">
+    <header class="popup-brand"><div class="brand-mark"><span></span><span></span><span></span></div><strong>Focus Forest</strong><span class="local-dot">Local</span></header>
+    <section id="empty" class="empty" hidden><div class="empty-seed">✦</div><p class="eyebrow">NO ACTIVE MISSION</p><h1>Nothing needs your attention yet.</h1><p>Open a new tab when you are ready to plant an intention.</p></section>
+    <section id="active" hidden>
+      <p class="eyebrow">YOUR MISSION</p><h1 id="mission"></h1><p id="state" class="state-line"></p>
+      <div class="branch-meter"><div class="meter-track"><span id="meter-fill"></span></div><div class="meter-labels"><span>Root</span><span id="depth-label">Branch 0</span></div></div>
+      <div class="quiet-stats"><div><strong id="nodes">0</strong><span>pages in the garden</span></div><div><strong id="compost">0</strong><span>saved for later</span></div></div>
+      <div class="actions"><button id="return" class="primary">Return to my mission <span>↶</span></button><button id="pause" class="secondary"></button><button id="dashboard" class="text-action">Open the garden <span>→</span></button><button id="settings" class="text-action">Tend the forest <span>↗</span></button></div>
+    </section>
+    <section id="completion" class="completion" role="dialog" aria-modal="true" aria-labelledby="completion-title" aria-describedby="completion-copy" hidden><p class="eyebrow">LET IT REST</p><h2 id="completion-title">This garden can rest now.</h2><p id="completion-copy"></p><div class="completion-actions"><button id="complete" class="primary" type="button">Let it rest</button><button id="keep" class="secondary" type="button">Keep tending</button><button id="review" class="text-action" type="button">Open the garden map</button></div></section>
+    <footer id="popup-footer"><span class="footer-sprig" aria-hidden="true">⌁</span><button id="end" type="button">Let this garden rest</button></footer>
+  </main>
+  <script type="module" src="app.js"></script>
+</body></html>
