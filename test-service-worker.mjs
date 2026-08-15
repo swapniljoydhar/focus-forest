@@ -151,5 +151,17 @@ await listeners.removed[0](31);
 tabActions.length = 0;
 await send({ type: 'GO_HOME' });
 assert.equal(tabActions.some((action) => action[0] === 'update' || action[0] === 'create'), false, 'stale origin removal must not target a reused tab');
+const firstShortcut = await send({ type: 'SAVE_SHORTCUT', shortcut: { label: 'GitHub', url: 'https://github.com/' } });
+assert.equal(firstShortcut.label, 'GitHub', 'shortcut should save a local label');
+const duplicateShortcut = await send({ type: 'SAVE_SHORTCUT', shortcut: { label: 'Code', url: 'https://github.com/' } });
+assert.equal((await send({ type: 'GET_SHORTCUTS' })).length, 1, 'duplicate shortcut URLs should reuse one tile');
+assert.equal((await send({ type: 'GET_SHORTCUTS' }))[0].label, 'Code', 'saving a duplicate URL should update the existing tile');
+const shortcutStateBeforeUnsafe = JSON.stringify(store.focusForestState.shortcuts);
+await send({ type: 'SAVE_SHORTCUT', shortcut: { label: 'Unsafe', url: 'javascript:alert(1)' } });
+assert.equal(JSON.stringify(store.focusForestState.shortcuts), shortcutStateBeforeUnsafe, 'unsafe shortcut URLs must not persist');
+await send({ type: 'SAVE_SHORTCUT', shortcut: { id: firstShortcut.id, label: 'GitHub home', url: 'https://github.com/explore' } });
+assert.equal((await send({ type: 'GET_SHORTCUTS' }))[0].label, 'GitHub home', 'shortcut should support safe edits');
+await send({ type: 'DELETE_SHORTCUT', id: firstShortcut.id });
+assert.equal((await send({ type: 'GET_SHORTCUTS' })).length, 0, 'shortcut should be removable locally');
 
 console.log('service-worker behavioral tests passed');

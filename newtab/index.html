@@ -22,7 +22,21 @@
       </form>
       <p id="status" class="status" role="status"></p>
       <div class="secondary-actions"><button id="resume" hidden>Resume current mission</button><button id="browse">Browse without a mission</button></div>
+      <section class="shortcut-shelf" aria-labelledby="shortcut-title">
+        <div class="shortcut-heading"><div><p class="shortcut-eyebrow">YOUR CLEARINGS</p><h2 id="shortcut-title">Quick paths</h2></div><button id="add-shortcut" class="shortcut-add" type="button">＋ Add</button></div>
+        <div id="shortcut-grid" class="shortcut-grid" aria-live="polite"></div>
+        <p id="shortcut-empty" class="shortcut-empty">Save familiar places here for a gentle return.</p>
+      </section>
     </section>
+    <div id="shortcut-dialog" class="shortcut-dialog-backdrop" hidden>
+      <form id="shortcut-form" class="shortcut-dialog" aria-labelledby="shortcut-dialog-title">
+        <p class="shortcut-eyebrow">A small clearing</p><h2 id="shortcut-dialog-title">Add a quick path</h2>
+        <label for="shortcut-label">Name</label><input id="shortcut-label" maxlength="40" autocomplete="off" placeholder="GitHub" required>
+        <label for="shortcut-url">Web address</label><input id="shortcut-url" type="url" inputmode="url" maxlength="1024" autocomplete="url" placeholder="https://github.com" required>
+        <p id="shortcut-error" class="shortcut-error" role="alert"></p>
+        <div class="shortcut-dialog-actions"><button id="shortcut-cancel" class="shortcut-cancel" type="button">Keep it closed</button><button class="shortcut-save" type="submit">Save path</button></div>
+      </form>
+    </div>
     <footer><span class="footer-leaf" aria-hidden="true">⌁</span><span>Curiosity is welcome here.</span><span class="weather-note">A private clearing in your browser</span></footer>
   </main>
   <script type="module" src="app.js"></script>

@@ -1,11 +1,11 @@
 export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
 export const STORAGE_KEY = 'focusForestState';
 export const SCHEMA_VERSION = 2;
-export const LIMITS = { SESSIONS: 12, NODES_PER_SESSION: 96, EVENTS_PER_SESSION: 72, COMPOST: 80, TITLE: 120, URL: 1024 };
+export const LIMITS = { SESSIONS: 12, NODES_PER_SESSION: 96, EVENTS_PER_SESSION: 72, COMPOST: 80, SHORTCUTS: 12, TITLE: 120, URL: 1024 };
 export const DEFAULT_SETTINGS = { gentleDepth: 4, choiceDepth: 5, ambientMotion: true };
 
 export function emptyState() {
-  return { schemaVersion: SCHEMA_VERSION, activeSessionId: null, sessions: [], compostItems: [], settings: { interventionsPaused: false, ...DEFAULT_SETTINGS } };
+  return { schemaVersion: SCHEMA_VERSION, activeSessionId: null, sessions: [], compostItems: [], shortcuts: [], settings: { interventionsPaused: false, ...DEFAULT_SETTINGS } };
 }
 
 export function makeId(prefix = 'id') {
@@ -91,6 +91,7 @@ export function normalizeState(value) {
     activeSessionId,
     sessions,
     compostItems: Array.isArray(value.compostItems) ? value.compostItems.slice(0, LIMITS.COMPOST).map((item) => { const url = safeHttpUrl(item?.url); if (!url) return null; return { id: compactText(item?.id, 120), url, title: compactText(item?.title || url, LIMITS.TITLE), mission: compactText(item?.mission, 140), depth: Math.max(0, Math.min(LIMITS.NODES_PER_SESSION, Number(item?.depth) || 0)), savedAt: Number.isFinite(item?.savedAt) ? item.savedAt : Date.now() }; }).filter((item) => item?.id && item.url) : [],
+    shortcuts: Array.isArray(value.shortcuts) ? value.shortcuts.slice(0, LIMITS.SHORTCUTS).map((item) => { const url = safeHttpUrl(item?.url); if (!url) return null; return { id: compactText(item?.id, 120), label: compactText(item?.label || new URL(url).hostname, 40), url, createdAt: Number.isFinite(item?.createdAt) ? item.createdAt : Date.now(), updatedAt: Number.isFinite(item?.updatedAt) ? item.updatedAt : Date.now() }; }).filter((item) => item?.id && item.url) : [],
     settings: normalizeSettings(value.settings, fallback.settings)
   };
 }
