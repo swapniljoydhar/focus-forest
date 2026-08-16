@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="ambient" aria-hidden="true"><span class="sun-wash"></span><span class="cloud cloud-one"></span><span class="cloud cloud-two"></span><span class="hill hill-back"></span><span class="hill hill-front"></span><span class="grass grass-left"></span><span class="grass grass-right"></span></div>
+  <div class="ambient" aria-hidden="true"><span class="sun-wash"></span><span class="hill hill-back"></span><span class="hill hill-front"></span></div>
   <main class="planting-shell">
-    <header class="topbar"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><span class="brand-name">Focus Forest</span><span class="private-note">Your garden stays on this device</span></header>
+    <header class="topbar"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><span class="brand-name">Focus Forest</span><span class="private-note">Stays on this device</span></header>
     <section class="hero" aria-labelledby="page-title">
       <div class="seed-illustration" aria-hidden="true"><div class="seed-glow"></div><div class="seed-shape"></div><div class="stem"></div><div class="leaf leaf-left"></div><div class="leaf leaf-right"></div></div>
       <p class="eyebrow">A small ritual for the open web</p>
@@ -17,11 +17,11 @@
       <p class="lede">Name the thing you want to leave with. The web can be wide; your intention gives it a path.</p>
       <form id="mission-form" class="mission-form">
         <label for="mission">My mission is</label>
-        <div class="input-wrap"><input id="mission" maxlength="140" autocomplete="off" placeholder="Compare laptops for university…" required><span id="count">0/140</span></div>
+        <div class="input-wrap"><input id="mission" maxlength="140" autocomplete="off" placeholder="Compare laptops for university…" required><span id="count" class="count">0/140</span></div>
         <button class="plant-button" type="submit"><span>Plant this mission</span><span aria-hidden="true">→</span></button>
       </form>
-      <p id="status" class="status" role="status"></p>
-      <div class="secondary-actions"><button id="resume" hidden>Resume current mission</button><button id="browse">Browse without a mission</button></div>
+      <p id="status" class="status" role="status" aria-live="polite"></p>
+      <div class="secondary-actions"><button id="resume" hidden>Resume current mission</button><button id="browse" type="button">Browse without a mission</button></div>
     </section>
     <footer><span class="footer-leaf" aria-hidden="true">⌁</span><span>Curiosity is welcome here.</span><span class="weather-note">A private clearing in your browser</span></footer>
   </main>
