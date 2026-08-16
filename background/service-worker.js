@@ -6,6 +6,13 @@ const MAX_PENDING_BRANCHES = 64;
 const SPA_DOMAINS = new Set(['youtube.com', 'notion.so', 'gmail.com', 'github.com', 'app.notion.so', 'docs.google.com', 'drive.google.com', 'calendar.google.com', 'mail.google.com']);
 const spaDedup = new Map();
 
+// Safe hostname extraction: never throws on malformed URLs.
+function hostnameOf(value) { try { return new URL(String(value || '')).hostname.toLowerCase(); } catch { return ''; } }
+// True when a hostname belongs to a known SPA domain or one of its subdomains.
+function isSpaDomain(hostname) { if (!hostname) return false; if (SPA_DOMAINS.has(hostname)) return true; for (const d of SPA_DOMAINS) if (hostname.endsWith(`.${d}`)) return true; return false; }
+// 1s dedup window for repeated SPA navigations on the same tab+url.
+function recentlyObservedSpa(tabId, url) { const key = `${tabId}::${url}`; if (spaDedup.has(key) && Date.now() - spaDedup.get(key) < 1000) return true; spaDedup.set(key, Date.now()); setTimeout(() => spaDedup.delete(key), 1500); return false; }
+
 function prunePendingBranches() { const now = Date.now(); for (const [key, entry] of pendingBranches) if (now - entry.createdAt >= 15000) pendingBranches.delete(key); while (pendingBranches.size > MAX_PENDING_BRANCHES) pendingBranches.delete(pendingBranches.keys().next().value); }
 function pendingBranchKey(url, sourceTabId, windowId) { return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${Number.isInteger(windowId) ? windowId : 'nowin'}::${url}`; }
 function setPendingBranch(url, sourceTabId, windowId, parentId) { prunePendingBranches(); const key = pendingBranchKey(url, sourceTabId, windowId); pendingBranches.set(key, { url, sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null, windowId: Number.isInteger(windowId) ? windowId : null, parentId, createdAt: Date.now() }); }
@@ -247,24 +254,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, message.tab || tab) : null;
       case 'END_MISSION': return endSession(safeReason(message.reason));
       case 'LINK_CLICK': {
-        const domain = message.url ? new URL(message.url).hostname.toLowerCase() : '';
-        const isSpa = SPA_DOMAINS.has(domain) || [...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`));
-        if (isSpa && Number.isInteger(tab?.id)) {
-          const dedupKey = `${tab.id}::${message.url}`;
-          if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return null;
-          spaDedup.set(dedupKey, Date.now());
-          setTimeout(() => spaDedup.delete(dedupKey), 1500);
-        }
-        return Number.isInteger(tab?.id) ? trackLink({ tabId: tab.id, url: message.url, title: message.title, targetBlank: Boolean(message.targetBlank), windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null }) : null;
+        if (!Number.isInteger(tab?.id)) return null;
+        const linkUrl = safeHttpUrl(message.url);
+        if (!linkUrl) return null;
+        if (isSpaDomain(hostnameOf(linkUrl))) recentlyObservedSpa(tab.id, linkUrl);
+        return trackLink({ tabId: tab.id, url: linkUrl, title: typeof message.title === 'string' ? message.title : '', targetBlank: Boolean(message.targetBlank), windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null });
       }
       case 'OBSERVE_PAGE': {
-        const domain = message.url ? new URL(message.url).hostname.toLowerCase() : '';
-        const isSpa = SPA_DOMAINS.has(domain) || [...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`));
-        if (isSpa && Number.isInteger(tab?.id)) {
-          const dedupKey = `${tab.id}::${message.url}`;
-          if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return null;
-        }
-        return Number.isInteger(tab?.id) ? observeTab(tab.id, message.url, message.title, tab.openerTabId, tab.windowId) : null;
+        if (!Number.isInteger(tab?.id)) return null;
+        if (isSpaDomain(hostnameOf(message.url)) && recentlyObservedSpa(tab.id, safeHttpUrl(message.url) || message.url)) return null;
+        return observeTab(tab.id, message.url, typeof message.title === 'string' ? message.title : '', tab.openerTabId, tab.windowId);
       }
       case 'COMPOST': return Number.isInteger(tab?.id) ? compost(tab.id, message.url, message.title) : null;
       case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }) : null;
@@ -308,12 +307,8 @@ function validateMessage(message) {
 chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
   return wrapWithErrorBoundary(async (details) => {
     if (details.frameId !== 0 || details.tabId == null || !details.url) return;
-    const domain = new URL(details.url).hostname.toLowerCase();
-    if (!SPA_DOMAINS.has(domain) && ![...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`))) return;
-    const dedupKey = `${details.tabId}::${details.url}`;
-    if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return;
-    spaDedup.set(dedupKey, Date.now());
-    setTimeout(() => spaDedup.delete(dedupKey), 1500);
+    if (!isSpaDomain(hostnameOf(details.url))) return;
+    if (recentlyObservedSpa(details.tabId, details.url)) return;
     const tab = await chrome.tabs.get(details.tabId);
     if (!tab?.url) return;
     await trackLink({ tabId: tab.id, url: tab.url, title: tab.title, targetBlank: false, windowId: Number.isInteger(tab.windowId) ? tab.windowId : null });
