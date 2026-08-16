@@ -290,14 +290,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'CLEAR_DATA': return replaceState(emptyState());
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
+        // Never navigate a live tab to the chrome://newtab placeholder; if no real
+        // HTTP(S) origin was ever recorded, open a fresh new-tab experience instead.
+        const hasRealOrigin = Boolean(returnUrl) && !/^chrome:\/\/newtab(?:\/|$)/i.test(returnUrl);
         let returnedToOrigin = false;
-        if (originTabId && returnUrl) {
+        if (originTabId && hasRealOrigin) {
           try {
             const liveTab = await chrome.tabs.get(originTabId);
             if (sameOriginUrl(liveTab?.url, origin.url)) { if (chrome.windows?.update && Number.isInteger(liveTab.windowId)) await chrome.windows.update(liveTab.windowId, { focused: true }); await chrome.tabs.update(originTabId, { url: returnUrl, active: true }); returnedToOrigin = true; }
           } catch { returnedToOrigin = false; }
         }
-        if (!returnedToOrigin && returnUrl) await chrome.tabs.create({ url: returnUrl, active: true });
+        if (!returnedToOrigin && hasRealOrigin) await chrome.tabs.create({ url: returnUrl, active: true });
         return activeView(await loadState(), returnedToOrigin ? originTabId : null);
       }
       default: return null;
