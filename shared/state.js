@@ -2,7 +2,7 @@ export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceD
 export const STORAGE_KEY = 'focusForestState';
 export const SCHEMA_VERSION = 2;
 export const LIMITS = { SESSIONS: 12, NODES_PER_SESSION: 96, EVENTS_PER_SESSION: 72, COMPOST: 80, TITLE: 120, URL: 1024 };
-export const DEFAULT_SETTINGS = { gentleDepth: 4, choiceDepth: 5, ambientMotion: true };
+export const DEFAULT_SETTINGS = { gentleDepth: 4, choiceDepth: 5, ambientMotion: true, growthAnimationTrigger: 'mission-origin' };
 
 export function emptyState() {
   return { schemaVersion: SCHEMA_VERSION, activeSessionId: null, sessions: [], compostItems: [], settings: { interventionsPaused: false, ...DEFAULT_SETTINGS } };
@@ -17,6 +17,18 @@ export function compactText(value, max = LIMITS.TITLE) {
 }
 
 const TRACKING_PARAMETERS = new Set(['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid', 'msclkid']);
+const SEARCH_DOMAINS = new Set(['google', 'bing', 'duckduckgo', 'yahoo', 'startpage', 'brave', 'baidu', 'yandex', 'ecosia', 'qwant']);
+const SEARCH_PARAMS = new Set(['q', 'search', 'query', 'p']);
+
+export function isSearchUrl(value) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    if (SEARCH_DOMAINS.has(host.split('.').slice(-2).join('.'))) return true;
+    for (const key of url.searchParams.keys()) { if (SEARCH_PARAMS.has(key.toLowerCase())) return true; }
+    return false;
+  } catch { return false; }
+}
 
 export function canonicalUrl(value) {
   try {
@@ -99,7 +111,8 @@ export function normalizeSettings(value, fallback = emptyState().settings) {
   const source = value && typeof value === 'object' ? value : {};
   const gentleDepth = Math.max(2, Math.min(8, Number(source.gentleDepth) || fallback.gentleDepth));
   const choiceDepth = Math.max(gentleDepth + 1, Math.min(10, Number(source.choiceDepth) || fallback.choiceDepth));
-  return { interventionsPaused: Boolean(source.interventionsPaused), gentleDepth, choiceDepth, ambientMotion: source.ambientMotion !== false };
+  const growthAnimationTrigger = ['mission-origin', 'every-branch', 'none'].includes(source.growthAnimationTrigger) ? source.growthAnimationTrigger : fallback.growthAnimationTrigger;
+  return { interventionsPaused: Boolean(source.interventionsPaused), gentleDepth, choiceDepth, ambientMotion: source.ambientMotion !== false, growthAnimationTrigger };
 }
 
 export async function loadState() {
@@ -117,5 +130,5 @@ export async function saveState(state) {
 }
 
 export function findNode(session, tabId) {
-  return session?.nodes.find((node) => node.tabId === tabId && !node.closedAt) || null;
+  return session?.nodes.find((node) => (node.tabIds?.includes(tabId) || node.tabId === tabId) && !node.closedAt) || null;
 }

@@ -1,28 +1,39 @@
-import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, canonicalUrl, compactText, emptyState, getDepthState, loadState, makeId, normalizeSettings, safeHttpUrl, saveState } from '../shared/state.js';
+import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, canonicalUrl, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, saveState } from '../shared/state.js';
+import { logError, logCritical, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
 const MAX_PENDING_BRANCHES = 64;
+const SPA_DOMAINS = new Set(['youtube.com', 'notion.so', 'gmail.com', 'github.com', 'app.notion.so', 'docs.google.com', 'drive.google.com', 'calendar.google.com', 'mail.google.com']);
+const spaDedup = new Map();
+
 function prunePendingBranches() { const now = Date.now(); for (const [key, entry] of pendingBranches) if (now - entry.createdAt >= 15000) pendingBranches.delete(key); while (pendingBranches.size > MAX_PENDING_BRANCHES) pendingBranches.delete(pendingBranches.keys().next().value); }
-function pendingBranchKey(url, sourceTabId) { return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${url}`; }
-function setPendingBranch(url, sourceTabId, parentId) { prunePendingBranches(); const key = pendingBranchKey(url, sourceTabId); pendingBranches.set(key, { url, sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null, parentId, createdAt: Date.now() }); }
-function takePendingBranch(url, sourceTabId) { prunePendingBranches(); const exact = pendingBranches.get(pendingBranchKey(url, sourceTabId)); if (exact) { pendingBranches.delete(pendingBranchKey(url, sourceTabId)); return exact; } const candidates = [...pendingBranches.entries()].filter(([, entry]) => entry.url === url && entry.sourceTabId == null); if (candidates.length !== 1) return null; pendingBranches.delete(candidates[0][0]); return candidates[0][1]; }
+function pendingBranchKey(url, sourceTabId, windowId) { return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${Number.isInteger(windowId) ? windowId : 'nowin'}::${url}`; }
+function setPendingBranch(url, sourceTabId, windowId, parentId) { prunePendingBranches(); const key = pendingBranchKey(url, sourceTabId, windowId); pendingBranches.set(key, { url, sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null, windowId: Number.isInteger(windowId) ? windowId : null, parentId, createdAt: Date.now() }); }
+function takePendingBranch(url, sourceTabId, windowId) { prunePendingBranches(); const exact = pendingBranches.get(pendingBranchKey(url, sourceTabId, windowId)); if (exact) { pendingBranches.delete(pendingBranchKey(url, sourceTabId, windowId)); return exact; } const candidates = [...pendingBranches.entries()].filter(([, entry]) => entry.url === url && entry.sourceTabId == null); if (candidates.length !== 1) return null; pendingBranches.delete(candidates[0][0]); return candidates[0][1]; }
 const NO_CHANGE = Symbol('no-change');
 
 let mutationQueue = Promise.resolve();
 function mutate(mutator) {
+  const wrappedMutator = wrapMutationWithErrorBoundary(mutator, { component: 'service-worker', function: 'mutate' });
   const run = mutationQueue.then(async () => {
     const state = await loadState();
-    const result = await mutator(state);
+    const result = await wrappedMutator(state);
     if (result === NO_CHANGE || result == null) return result === NO_CHANGE ? null : result;
     await saveState(state);
     return result;
   });
-  mutationQueue = run.catch(() => undefined);
+  mutationQueue = run.catch((error) => {
+    logError(error, { category: ERROR_CATEGORIES.STATE_MUTATION, component: 'service-worker', function: 'mutate-catch' });
+    return undefined;
+  });
   return run;
 }
 function replaceState(nextState) {
   const run = mutationQueue.then(async () => { await saveState(nextState); return nextState; });
-  mutationQueue = run.catch(() => undefined);
+  mutationQueue = run.catch((error) => {
+    logError(error, { category: ERROR_CATEGORIES.STATE_MUTATION, component: 'service-worker', function: 'replaceState-catch' });
+    return undefined;
+  });
   return run;
 }
 
@@ -44,9 +55,6 @@ function isRedirectLike(value) {
   } catch { return false; }
 }
 
-function trackedTabIds(session) {
-  return new Set(session.nodes.filter((node) => !node.closedAt).flatMap((node) => node.tabIds?.length ? node.tabIds : Number.isInteger(node.tabId) ? [node.tabId] : []));
-}
 function isRecord(value) { return value && typeof value === 'object' && !Array.isArray(value); }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : null; }
 function safeReason(value) { return ['user_ended', 'mission_changed', 'browse_without_mission'].includes(value) ? value : 'user_ended'; }
@@ -119,7 +127,7 @@ async function endSession(reason = 'user_ended') {
   });
 }
 
-async function trackLink({ tabId, url, title, targetBlank = false }) {
+async function trackLink({ tabId, url, title, targetBlank = false, windowId }) {
   const destination = safeHttpUrl(url);
   return mutate((state) => {
     const session = activeSession(state); if (!session || !destination) return NO_CHANGE;
@@ -129,7 +137,7 @@ async function trackLink({ tabId, url, title, targetBlank = false }) {
     if (existing) return NO_CHANGE;
     if (targetBlank || isRedirectLike(destination)) {
       prunePendingBranches();
-      if (targetBlank) setPendingBranch(destination, tabId, parent.id);
+      if (targetBlank) setPendingBranch(destination, tabId, windowId, parent.id);
       if (isRedirectLike(destination)) setPendingRedirect(session, tabId, parent.id);
       addEvent(session, 'link_opened', { url: destination, depth: parent.depth + 1 });
       return { pending: true, parentId: parent.id, redirect: isRedirectLike(destination) };
@@ -149,18 +157,19 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId, windowId) {
   return mutate((state) => {
     const session = activeSession(state); if (!session || !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return NO_CHANGE;
     const current = nodeForTab(session, tabId);
-    const seed = session.nodes.length === 1 && (session.nodes[0].url.startsWith('chrome-extension://') || session.nodes[0].url.startsWith('chrome://'));
-    if (seed) {
-      const root = session.nodes[0];
-      attachTab(root, tabId); root.url = url; root.title = title; root.firstSeenAt = Date.now(); root.relationshipConfidence = 'direct';
+    const originNotSet = session.origin?.url === 'chrome://newtab' || session.nodes.length === 1 && !session.nodes[0].url.startsWith('http');
+    if (originNotSet) {
+      const root = session.nodes[0] || session.nodes.at(-1);
+      if (root) { attachTab(root, tabId); root.url = url; root.title = title; root.firstSeenAt = Date.now(); root.relationshipConfidence = 'direct'; }
       session.origin = { tabId, windowId: Number.isInteger(windowId) ? windowId : session.origin?.windowId || null, url, title }; addEvent(session, 'origin_planted', { url }); return root;
     }
     if (current && current.url === url) return NO_CHANGE;
+    if (isSearchUrl(url) && !originNotSet) return NO_CHANGE;
     const known = session.nodes.find((node) => node.url === url && !node.closedAt);
     if (known) { clearPendingRedirect(session, tabId); moveTabToNode(session, tabId, known.id); const attached = attachTab(known, tabId); known.title = title; if (attached) addEvent(session, 'tab_joined_path', { nodeId: known.id, url }); else addEvent(session, 'return_to_path', { nodeId: known.id, url }); return known; }
     const opener = openerTabId && nodeForTab(session, openerTabId);
     prunePendingBranches();
-    const pending = takePendingBranch(url, Number.isInteger(openerTabId) ? openerTabId : tabId);
+    const pending = takePendingBranch(url, Number.isInteger(openerTabId) ? openerTabId : tabId, Number.isInteger(windowId) ? windowId : null);
     const pendingParent = pending ? session.nodes.find((node) => node.id === pending.parentId) : null;
     const redirectParent = pendingRedirectParent(session, tabId);
     if (isRedirectLike(url) && (pendingParent || redirectParent || current)) {
@@ -217,19 +226,44 @@ async function getSnapshot(sessionId = null, includeHistory = false) {
   return { state, session: selected || activeSession(state) || latest, activeSessionId: state.activeSessionId, thresholds: effectiveThresholds(state.settings), settings: normalizeSettings(state.settings) };
 }
 
-chrome.runtime.onInstalled.addListener(() => { chrome.storage.local.get(STORAGE_KEY).then((result) => { if (!result[STORAGE_KEY]) chrome.storage.local.set({ [STORAGE_KEY]: emptyState() }); }); });
+chrome.runtime.onInstalled.addListener(() => {
+  wrapWithErrorBoundary(async () => {
+    chrome.storage.local.get(STORAGE_KEY).then((result) => { 
+      if (!result[STORAGE_KEY]) chrome.storage.local.set({ [STORAGE_KEY]: emptyState() }); 
+    });
+  }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled' })();
+});
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isRecord(message) || typeof message.type !== 'string') { sendResponse(null); return false; }
+  const tab = sender && typeof sender === 'object' && sender.tab && typeof sender.tab === 'object' ? sender.tab : null;
+  if (!validateMessage(message)) { sendResponse(null); return false; }
   (async () => {
-    const tab = sender && typeof sender === 'object' && sender.tab && typeof sender.tab === 'object' ? sender.tab : null;
     switch (message.type) {
       case 'GET_SNAPSHOT': return getSnapshot(safeId(message.sessionId) || null, Boolean(message.includeHistory));
       case 'GET_ACTIVE_VIEW': return activeView(await loadState(), tab?.id);
       case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, message.tab || tab) : null;
       case 'END_MISSION': return endSession(safeReason(message.reason));
-      case 'LINK_CLICK': return Number.isInteger(tab?.id) ? trackLink({ tabId: tab.id, url: message.url, title: message.title, targetBlank: Boolean(message.targetBlank) }) : null;
-      case 'OBSERVE_PAGE': return Number.isInteger(tab?.id) ? observeTab(tab.id, message.url, message.title, tab.openerTabId, tab.windowId) : null;
+      case 'LINK_CLICK': {
+        const domain = message.url ? new URL(message.url).hostname.toLowerCase() : '';
+        const isSpa = SPA_DOMAINS.has(domain) || [...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`));
+        if (isSpa && Number.isInteger(tab?.id)) {
+          const dedupKey = `${tab.id}::${message.url}`;
+          if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return null;
+          spaDedup.set(dedupKey, Date.now());
+          setTimeout(() => spaDedup.delete(dedupKey), 1500);
+        }
+        return Number.isInteger(tab?.id) ? trackLink({ tabId: tab.id, url: message.url, title: message.title, targetBlank: Boolean(message.targetBlank), windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null }) : null;
+      }
+      case 'OBSERVE_PAGE': {
+        const domain = message.url ? new URL(message.url).hostname.toLowerCase() : '';
+        const isSpa = SPA_DOMAINS.has(domain) || [...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`));
+        if (isSpa && Number.isInteger(tab?.id)) {
+          const dedupKey = `${tab.id}::${message.url}`;
+          if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return null;
+        }
+        return Number.isInteger(tab?.id) ? observeTab(tab.id, message.url, message.title, tab.openerTabId, tab.windowId) : null;
+      }
       case 'COMPOST': return Number.isInteger(tab?.id) ? compost(tab.id, message.url, message.title) : null;
       case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }) : null;
       case 'UPDATE_SETTINGS': return isRecord(message.settings) ? mutate((state) => { const next = normalizeSettings({ ...state.settings, ...message.settings }); if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE; state.settings = next; const session = activeSession(state); if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); }); return state.settings; }) : null;
@@ -251,9 +285,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       default: return null;
     }
-  })().then(sendResponse).catch((error) => sendResponse({ error: error.message }));
+  })()
+  .then(sendResponse)
+  .catch((error) => {
+    logError(error, { category: ERROR_CATEGORIES.MESSAGING, component: 'service-worker', function: 'onMessage', messageType: message?.type });
+    sendResponse({ error: 'INTERNAL_ERROR' });
+  });
   return true;
 });
 
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => { if (changeInfo.status === 'complete' && tab.url) await observeTab(tabId, tab.url, tab.title, tab.openerTabId, tab.windowId); });
-chrome.tabs.onRemoved.addListener(async (tabId) => { await mutate((state) => { const session = activeSession(state); if (!session) return NO_CHANGE; let changed = false; if (session.origin?.tabId === tabId) { session.origin.tabId = null; changed = true; } const pendingBefore = (session.pendingRedirects || []).length; clearPendingRedirect(session, tabId); if (session.pendingRedirects.length !== pendingBefore) changed = true; const node = nodeForTab(session, tabId); if (!node || node.closedAt) return changed ? session : NO_CHANGE; detachTab(node, tabId); if (!node.tabIds?.length) node.closedAt = Date.now(); return node; }); });
+function validateMessage(message) {
+  if (!isRecord(message)) return false;
+  const required = { GET_SNAPSHOT: [], GET_ACTIVE_VIEW: [], START_MISSION: ['mission'], END_MISSION: [], LINK_CLICK: ['url'], OBSERVE_PAGE: ['url'], COMPOST: ['url'], PAUSE_INTERVENTION: ['paused'], UPDATE_SETTINGS: ['settings'], DELETE_COMPOST: ['id'], PRUNE_NODE: ['sessionId', 'nodeId'], DELETE_SESSION: ['sessionId'], CLEAR_DATA: [], GO_HOME: [] };
+  const schema = required[message.type];
+  if (!schema) return false;
+  for (const key of schema) { if (!(key in message)) return false; }
+  return true;
+}
+
+chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
+  return wrapWithErrorBoundary(async (details) => {
+    if (details.frameId !== 0 || details.tabId == null || !details.url) return;
+    const domain = new URL(details.url).hostname.toLowerCase();
+    if (!SPA_DOMAINS.has(domain) && ![...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`))) return;
+    const dedupKey = `${details.tabId}::${details.url}`;
+    if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return;
+    spaDedup.set(dedupKey, Date.now());
+    setTimeout(() => spaDedup.delete(dedupKey), 1500);
+    chrome.tabs.get(details.tabId, (tab) => {
+      if (chrome.runtime.lastError || !tab?.url) return;
+      trackLink({ tabId: tab.id, url: tab.url, title: tab.title, targetBlank: false, windowId: Number.isInteger(tab.windowId) ? tab.windowId : null });
+    });
+  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'webNavigation.onHistoryStateUpdated' })(details);
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  return wrapWithErrorBoundary(async (tabId, changeInfo, tab) => {
+    if (changeInfo.status === 'complete' && tab.url) await observeTab(tabId, tab.url, tab.title, tab.openerTabId, tab.windowId);
+  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onUpdated' })(tabId, changeInfo, tab);
+});
+chrome.tabs.onRemoved.addListener((tabId) => {
+  return wrapWithErrorBoundary(async (tabId) => {
+    await mutate((state) => {
+      const session = activeSession(state);
+      if (!session) return NO_CHANGE;
+      let changed = false;
+      if (session.origin?.tabId === tabId) { session.origin.tabId = null; changed = true; }
+      const pendingBefore = (session.pendingRedirects || []).length;
+      clearPendingRedirect(session, tabId);
+      if (session.pendingRedirects.length !== pendingBefore) changed = true;
+      const node = nodeForTab(session, tabId);
+      if (!node || node.closedAt) return changed ? session : NO_CHANGE;
+      detachTab(node, tabId);
+      if (!node.tabIds?.length) node.closedAt = Date.now();
+      return node;
+    });
+  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onRemoved' })(tabId);
+});

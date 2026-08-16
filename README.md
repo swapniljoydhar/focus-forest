@@ -28,7 +28,7 @@ Session data, URL/title metadata, navigation events, and compost items are store
 
 ## Permissions
 
-The extension uses local storage for gardens and does not request the redundant `tabs` permission. It uses declared HTTP(S) page access to render the mission chip and detect eligible link activations. Chrome-internal, restricted, and other protected pages may not support the content script and degrade gracefully.
+The extension uses local storage for gardens and does not request the redundant `tabs` permission. It uses declared HTTP(S) page access to render the mission chip and detect eligible link activations, plus `webNavigation` to support SPA history tracking on YouTube, Notion, Gmail, GitHub, and similar sites. Chrome-internal, restricted, and other protected pages may not support the content script and degrade gracefully.
 
 ## Accessibility and agency
 

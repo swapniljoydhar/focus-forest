@@ -1,3 +1,5 @@
+import { logError, wrapWithErrorBoundary, ERROR_CATEGORIES } from '../shared/error-tracing.js';
+
 async function message(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 const empty = document.querySelector('#empty'); const active = document.querySelector('#active'); const completion = document.querySelector('#completion'); const footer = document.querySelector('#popup-footer');
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -18,6 +20,7 @@ function reflectionFor(session) {
 
 function setRitual(open) { completion.hidden = !open; footer.hidden = open; if (open) { document.querySelector('#complete').focus(); } else if (ritualReturnFocus) { ritualReturnFocus.focus(); } }
 
+const safeRender = wrapWithErrorBoundary(render, { category: ERROR_CATEGORIES.UI_RENDER, function: 'render' });
 async function render() {
   const snap = await message('GET_SNAPSHOT'); latest = snap.session; const session = snap.session;
   empty.hidden = Boolean(session); active.hidden = !session; setRitual(false); footer.hidden = Boolean(session) ? false : true;
@@ -31,15 +34,15 @@ async function render() {
   const pause = document.querySelector('#pause'); pause.textContent = session.interventionPaused ? 'Resume the forest' : 'Pause interventions'; pause.setAttribute('aria-pressed', String(Boolean(session.interventionPaused)));
 }
 
-function renderSafely() { return render().catch(() => { latest = null; active.hidden = true; completion.hidden = true; footer.hidden = true; empty.hidden = false; }); }
+function renderSafely() { return safeRender().catch((error) => { logError(error, { category: ERROR_CATEGORIES.UI_RENDER, function: 'renderSafely' }); latest = null; active.hidden = true; completion.hidden = true; footer.hidden = true; empty.hidden = false; }); }
 
-document.querySelector('#return').addEventListener('click', () => message('GO_HOME'));
-document.querySelector('#pause').addEventListener('click', async () => { const snap = await message('GET_SNAPSHOT'); await message('PAUSE_INTERVENTION', { paused: !snap.session.interventionPaused }); renderSafely(); });
-document.querySelector('#dashboard').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') }));
-document.querySelector('#settings').addEventListener('click', () => chrome.runtime.openOptionsPage());
-document.querySelector('#end').addEventListener('click', () => { if (!latest) return; ritualReturnFocus = document.querySelector('#end'); const reflection = reflectionFor(latest); document.querySelector('#completion-copy').textContent = reflection.copy; document.querySelector('#completion-title').textContent = reflection.deepest >= 4 ? 'This garden has a long path to remember.' : 'This garden can rest now.'; active.hidden = true; setRitual(true); });
-document.querySelector('#complete').addEventListener('click', async () => { await message('END_MISSION', { reason: 'user_ended' }); ritualReturnFocus = null; renderSafely(); });
-document.querySelector('#keep').addEventListener('click', () => { active.hidden = false; setRitual(false); });
-document.querySelector('#review').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') }));
-document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && !completion.hidden) { active.hidden = false; setRitual(false); } });
+document.querySelector('#return').addEventListener('click', wrapWithErrorBoundary(() => message('GO_HOME'), { category: ERROR_CATEGORIES.MESSAGING, function: 'return.click' }));
+document.querySelector('#pause').addEventListener('click', wrapWithErrorBoundary(async () => { const snap = await message('GET_SNAPSHOT'); await message('PAUSE_INTERVENTION', { paused: !snap.session.interventionPaused }); renderSafely(); }, { category: ERROR_CATEGORIES.MESSAGING, function: 'pause.click' }));
+document.querySelector('#dashboard').addEventListener('click', wrapWithErrorBoundary(() => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') }), { category: ERROR_CATEGORIES.UI_RENDER, function: 'dashboard.click' }));
+document.querySelector('#settings').addEventListener('click', wrapWithErrorBoundary(() => chrome.runtime.openOptionsPage(), { category: ERROR_CATEGORIES.UI_RENDER, function: 'settings.click' }));
+document.querySelector('#end').addEventListener('click', wrapWithErrorBoundary(() => { if (!latest) return; ritualReturnFocus = document.querySelector('#end'); const reflection = reflectionFor(latest); document.querySelector('#completion-copy').textContent = reflection.copy; document.querySelector('#completion-title').textContent = reflection.deepest >= 4 ? 'This garden has a long path to remember.' : 'This garden can rest now.'; active.hidden = true; setRitual(true); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'end.click' }));
+document.querySelector('#complete').addEventListener('click', wrapWithErrorBoundary(async () => { await message('END_MISSION', { reason: 'user_ended' }); ritualReturnFocus = null; renderSafely(); }, { category: ERROR_CATEGORIES.MESSAGING, function: 'complete.click' }));
+document.querySelector('#keep').addEventListener('click', wrapWithErrorBoundary(() => { active.hidden = false; setRitual(false); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'keep.click' }));
+document.querySelector('#review').addEventListener('click', wrapWithErrorBoundary(() => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') }), { category: ERROR_CATEGORIES.UI_RENDER, function: 'review.click' }));
+document.addEventListener('keydown', wrapWithErrorBoundary((event) => { if (event.key === 'Escape' && !completion.hidden) { active.hidden = false; setRitual(false); } }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'keydown' }));
 renderSafely();
