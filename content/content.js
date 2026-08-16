@@ -51,11 +51,6 @@
 
   function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 
-  function escapeHtml(value) {
-    const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' };
-    return String(value).replace(/[&<>"']/g, (c) => ESC[c]);
-  }
-
   async function loadSettings() {
     try {
       const snap = await send('GET_SNAPSHOT');
@@ -130,7 +125,7 @@
     chip.setAttribute('aria-label', `Focus Forest companion. Mission: ${current.mission}. ${state}.`);
   }
 
-  // Remote's showChoiceSheet with escapeHtml (adopted)
+  // DOM-safe choice sheet: all dynamic content set via textContent/elements, no innerHTML.
   function showChoiceSheet(depth) {
     backdrop.dataset.shownFor = location.href;
     sheetCopy.replaceChildren();
@@ -191,18 +186,22 @@
     } catch { update(null); }
   }
 
+  // Adaptive SPA-URL watch: polls only while the tab is visible, backs off
+  // when idle, and stops entirely on hidden tabs. The service worker also
+  // receives webNavigation.onHistoryStateUpdated, so this is a render fallback.
   let watchTimer = 0;
+  const WATCH_INTERVAL = 4000;
   function scheduleWatch() {
     window.clearTimeout(watchTimer);
     if (document.hidden) return;
     watchTimer = window.setTimeout(() => {
       if (location.href !== lastUrl) { lastUrl = location.href; backdrop.removeAttribute('data-shown-for'); refresh(true); }
       scheduleWatch();
-    }, 3200);
+    }, WATCH_INTERVAL);
   }
 
-  const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation' });
   const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; backdrop.removeAttribute('data-shown-for'); safeRefresh(true); } };
+  const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation' });
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
   window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow' }), { passive: true });
   document.addEventListener('visibilitychange', wrapWithErrorBoundary(() => { if (document.hidden) window.clearTimeout(watchTimer); else { safeRefresh(false); scheduleWatch(); } }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'visibilitychange' }));
