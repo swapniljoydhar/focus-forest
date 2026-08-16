@@ -70,6 +70,21 @@ function safeOriginUrl(value) { const raw = String(value || ''); return safeHttp
 function safeNavigationUrl(value) { const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http; if (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) || raw === 'chrome://newtab') return raw.slice(0, LIMITS.URL); return null; }
 function sameOriginUrl(actual, expected) { const expectedHttp = safeHttpUrl(expected); return expectedHttp ? safeHttpUrl(actual) === expectedHttp : String(actual || '') === String(expected || ''); }
 
+# Coerce a sender or client-supplied tab descriptor into a minimal safe shape.
+# Only numeric ids and sanitized url/title fields are preserved; the genuine
+# chrome sender.tab is preferred when present so extension pages cannot spoof
+# tab identity beyond what createSession already sanitizes.
+function sanitizeTab(tab) {
+  if (!tab || typeof tab !== 'object') return null;
+  return {
+    id: Number.isInteger(tab.id) ? tab.id : null,
+    windowId: Number.isInteger(tab.windowId) ? tab.windowId : null,
+    url: typeof tab.url === 'string' ? tab.url : null,
+    title: typeof tab.title === 'string' ? tab.title : null,
+    openerTabId: Number.isInteger(tab.openerTabId) ? tab.openerTabId : null
+  };
+}
+
 function addEvent(session, type, payload = {}) {
   session.events.push({ id: makeId('event'), type, at: Date.now(), ...payload });
   if (session.events.length > LIMITS.EVENTS_PER_SESSION) session.events.splice(0, session.events.length - LIMITS.EVENTS_PER_SESSION);
@@ -251,7 +266,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.type) {
       case 'GET_SNAPSHOT': return getSnapshot(safeId(message.sessionId) || null, Boolean(message.includeHistory));
       case 'GET_ACTIVE_VIEW': return activeView(await loadState(), tab?.id);
-      case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, message.tab || tab) : null;
+      case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, sanitizeTab(tab) || sanitizeTab(message.tab)) : null;
       case 'END_MISSION': return endSession(safeReason(message.reason));
       case 'LINK_CLICK': {
         if (!Number.isInteger(tab?.id)) return null;
