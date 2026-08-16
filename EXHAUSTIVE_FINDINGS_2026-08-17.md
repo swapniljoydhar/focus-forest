@@ -33,3 +33,20 @@ Sources:
 - https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts
 - https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/events
 - https://developer.chrome.com/docs/extensions/reference/api/storage
+
+
+## Second-pass findings and disposition
+
+The published `49af7f2` tree was re-read and the requested popup and stress fixes were reproduced directly. The following additional issues were confirmed and repaired in the second pass:
+
+1. The content script read `sessionStorage` for the origin ritual flag outside a guard. The initial read now defaults to `false` and is wrapped in `try/catch`.
+2. URL helpers could truncate accepted values into malformed strings. Canonical, HTTP(S), new-tab, and current-extension URLs over the bounded limit are now rejected rather than sliced.
+3. URL credentials could have been persisted into local state or reopened from compost. Canonicalization now rejects usernames and passwords.
+4. The boolean storage write guard was vulnerable to overlapping writes. It is now an in-flight counter, with tests for two concurrent held writes, external invalidation, read failure, and write failure.
+5. A missing sender could throw before the service worker rejected the message. The sender check is now optional-chain safe, with a regression.
+6. Message schema lookup and required-field checks could observe inherited properties. Validation now requires own `type`, own schema types, and own required/optional fields. Tests cover `toString` and prototype-inherited messages.
+7. Companion drag pointer callbacks were not behind the event error boundary. Pointerdown, pointermove, and pointerup now use explicit swallow-mode wrappers.
+8. The dashboard care-dialog focus trap did not handle focus entering from outside. Tab now routes into the dialog when the active element is not one of its controls.
+9. A dependency-free repository-integrity regression was added for manifest references, HTML assets, line endings, and runtime external-resource policy.
+
+The original high-impact findings—event-wrapper unhandled rejections, stress sender-mock bypass, canonical raw fallback, broad extension URL acceptance, default threshold binding, popup mission race, stale dashboard recovery, and fire-and-forget link messaging—remain fixed and are covered by the published regression matrix. Remaining items are real-Chrome lifecycle, accessibility, profile, visual, and quota checks described in `EXHAUSTIVE_AUDIT_REPORT_2026-08-17.md`.

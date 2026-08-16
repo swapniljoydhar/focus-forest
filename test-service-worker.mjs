@@ -32,13 +32,18 @@ globalThis.chrome = {
 
 await import('./background/service-worker.js');
 const handler = listeners.message[0];
+async function rawSend(message, sender) {
+  return await new Promise((resolve, reject) => handler(message, sender, (response) => response?.error ? reject(new Error(response.error)) : resolve(response)));
+}
 async function send(message, tab = undefined) {
   if (tab?.id != null) { const current = { ...(tabInfo.get(tab.id) || {}), windowId: 1, ...tab }; if (message?.type === 'OBSERVE_PAGE' && typeof message.url === 'string') { current.url = message.url; current.title = message.title || current.title; } tabInfo.set(tab.id, current); }
-  return await new Promise((resolve, reject) => {
-    const sender = tab ? { id: 'test', tab, url: `https://page.test/${tab.id}` } : { id: 'test', url: 'chrome-extension://test/dashboard/index.html' };
-    handler(message, sender, (response) => response?.error ? reject(new Error(response.error)) : resolve(response));
-  });
+  const sender = tab ? { id: 'test', tab, url: `https://page.test/${tab.id}` } : { id: 'test', url: 'chrome-extension://test/dashboard/index.html' };
+  return rawSend(message, sender);
 }
+assert.equal(await rawSend({ type: 'CLEAR_DATA' }, undefined), null, 'missing sender must be rejected without throwing');
+assert.equal(await rawSend({ type: 'toString' }, { id: 'test', url: 'chrome-extension://test/dashboard/index.html' }), null, 'inherited property names must not be accepted as message types');
+const inheritedMessage = Object.create({ type: 'CLEAR_DATA' });
+assert.equal(await rawSend(inheritedMessage, { id: 'test', url: 'chrome-extension://test/dashboard/index.html' }), null, 'inherited message fields must not bypass own-property validation');
 function session() { return store.focusForestState.sessions.find((s) => s.id === store.focusForestState.activeSessionId); }
 
 await send({ type: 'START_MISSION', mission: 'Find a good laptop to buy.', tab: { id: 7, url: 'chrome-extension://test/newtab/index.html', title: 'New Tab' } });

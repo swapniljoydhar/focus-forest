@@ -86,7 +86,8 @@
   let ritualToken = 0;
   let ritualTimer = 0;
   let growthAnimationTrigger = 'mission-origin';
-  let originRitualPlayed = sessionStorage.getItem('ff-origin-ritual-played') === 'true';
+  let originRitualPlayed = false;
+  try { originRitualPlayed = sessionStorage.getItem('ff-origin-ritual-played') === 'true'; } catch { /* storage may be unavailable */ }
 
   // --- Drag-to-move the chip (Pointer Events + setPointerCapture) ---
   let chipPos = null;
@@ -94,29 +95,29 @@
   if (chipPos && Number.isFinite(chipPos.x) && Number.isFinite(chipPos.y)) applyChipPos(chipPos.x, chipPos.y);
   function applyChipPos(x, y) { chip.style.left = `${x}px`; chip.style.top = `${y}px`; chip.style.right = 'auto'; }
   const dragHandle = shadow.querySelector('[data-drag-handle]');
-  dragHandle.addEventListener('pointerdown', (e) => {
+  dragHandle.addEventListener('pointerdown', wrapWithErrorBoundary((e) => {
     e.preventDefault();
     const rect = chip.getBoundingClientRect();
     const offsetX = e.clientX - rect.left;
     const offsetY = e.clientY - rect.top;
     chip.classList.add('dragging');
     dragHandle.setPointerCapture(e.pointerId);
-    const onMove = (ev) => {
+    const onMove = wrapWithErrorBoundary((ev) => {
       const x = Math.max(8, Math.min(window.innerWidth - rect.width - 8, ev.clientX - offsetX));
       const y = Math.max(8, Math.min(window.innerHeight - rect.height - 8, ev.clientY - offsetY));
       applyChipPos(x, y);
-    };
-    const onUp = (ev) => {
+    }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'drag.pointermove', swallow: true });
+    const onUp = wrapWithErrorBoundary((ev) => {
       chip.classList.remove('dragging');
       dragHandle.releasePointerCapture(ev.pointerId);
       const finalRect = chip.getBoundingClientRect();
       try { sessionStorage.setItem('ff-chip-pos', JSON.stringify({ x: finalRect.left, y: finalRect.top })); } catch { /* ignore */ }
       dragHandle.removeEventListener('pointermove', onMove);
       dragHandle.removeEventListener('pointerup', onUp);
-    };
+    }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'drag.pointerup', swallow: true });
     dragHandle.addEventListener('pointermove', onMove);
     dragHandle.addEventListener('pointerup', onUp);
-  });
+  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'drag.pointerdown', swallow: true }));
 
   async function loadSettings() {
     try {

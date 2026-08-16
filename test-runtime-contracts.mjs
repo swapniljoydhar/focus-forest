@@ -23,6 +23,6 @@ assert.doesNotMatch(content, /\bbackdrop(?:\.|\[)|\bsheetCopy\b/, 'content scrip
 assert.doesNotMatch(content, /rootEl\.innerHTML/, 'companion markup should be built with DOM APIs rather than an HTML sink');
 
 assert.doesNotMatch(worker, /^# /m, 'service worker must use valid JavaScript comments');
-assert.match(worker, /if \(\!\(key in message\)\) \{\s*if \(!optional\) return false;/, 'message validation must continue through optional fields without accepting missing required fields');
+assert.match(worker, /if \(!Object\.hasOwn\(message, key\)\) \{\s*if \(!optional\) return false;/, 'message validation must continue through optional fields without accepting inherited or missing required fields');
 
 console.log('runtime contracts passed');

@@ -3,23 +3,27 @@ import { describe, it } from 'node:test';
 
 const storage = {};
 const changeListeners = [];
-let holdNextSet = false;
-let setStartedResolve = null;
-let releaseHeldSet = null;
+let heldSetCount = 0;
+let failNextGet = false;
+let failNextSet = false;
+const setStartResolvers = [];
+const setReleaseResolvers = [];
 
 globalThis.chrome = {
   runtime: { id: 'test' },
   storage: {
     local: {
       async get(key) {
+        if (failNextGet) { failNextGet = false; throw new Error('simulated storage read failure'); }
         return key in storage ? { [key]: structuredClone(storage[key]) } : {};
       },
       async set(value) {
+        if (failNextSet) { failNextSet = false; throw new Error('simulated storage write failure'); }
         Object.assign(storage, structuredClone(value));
-        if (!holdNextSet) return;
-        holdNextSet = false;
-        setStartedResolve?.();
-        await new Promise((resolve) => { releaseHeldSet = resolve; });
+        if (heldSetCount <= 0) return;
+        heldSetCount -= 1;
+        setStartResolvers.shift()?.();
+        await new Promise((resolve) => { setReleaseResolvers.push(resolve); });
       }
     },
     onChanged: {
@@ -111,7 +115,10 @@ describe('shared/state.js core functions', () => {
   it('canonicalUrl rejects malformed values instead of returning unsafe raw strings', () => {
     assert.strictEqual(canonicalUrl('not-a-url'), null);
     assert.strictEqual(canonicalUrl('javascript:alert(1)'), null);
+    assert.strictEqual(canonicalUrl('https://user:password@example.com/private'), null);
     assert.strictEqual(canonicalUrl('https://example.com/path?utm_source=x#fragment'), 'https://example.com/path');
+    assert.strictEqual(canonicalUrl(`https://example.com/${'x'.repeat(LIMITS.URL)}`), null);
+    assert.strictEqual(safeHttpUrl(`https://example.com/${'x'.repeat(LIMITS.URL)}`), null);
   });
 
   it('safeSessionUrl accepts only the current extension origin or new-tab placeholder', () => {
@@ -121,6 +128,7 @@ describe('shared/state.js core functions', () => {
     assert.strictEqual(safeSessionUrl('chrome-extension://other/newtab/index.html'), null);
     assert.strictEqual(safeSessionUrl('chrome-extension://test'), null);
     assert.strictEqual(safeSessionUrl('javascript:alert(1)'), null);
+    assert.strictEqual(safeSessionUrl(`chrome-extension://test/${'x'.repeat(LIMITS.URL)}`), null);
   });
 });
 
@@ -215,22 +223,44 @@ describe('storage cache and invalidation', () => {
     assert.strictEqual(refreshed.sessions[0].id, 's2');
 
     const next = sessionFixture('s3');
-    holdNextSet = true;
-    let resolveStarted;
-    const started = new Promise((resolve) => { resolveStarted = resolve; });
-    setStartedResolve = resolveStarted;
+    heldSetCount = 1;
+    const started = new Promise((resolve) => { setStartResolvers.push(resolve); });
     const savePromise = saveState(next);
     await started;
     fireStorageChange(next, refreshed);
     assert.strictEqual((await loadState()).sessions[0].id, 's2', 'own-write change must not evict cache while save is in flight');
-    releaseHeldSet?.();
+    setReleaseResolvers.shift()?.();
     await savePromise;
     assert.strictEqual((await loadState()).sessions[0].id, 's3');
 
-    storage[STORAGE_KEY] = sessionFixture('s4');
-    fireStorageChange(storage[STORAGE_KEY], next);
-    assert.strictEqual((await loadState()).sessions[0].id, 's4');
-    setStartedResolve = null;
-    releaseHeldSet = null;
+    const overlapBase = await loadState();
+    heldSetCount = 2;
+    const firstStarted = new Promise((resolve) => { setStartResolvers.push(resolve); });
+    const secondStarted = new Promise((resolve) => { setStartResolvers.push(resolve); });
+    const firstSave = saveState(sessionFixture('s4'));
+    const secondSave = saveState(sessionFixture('s5'));
+    await Promise.all([firstStarted, secondStarted]);
+    fireStorageChange(sessionFixture('external'), overlapBase);
+    assert.strictEqual((await loadState()).sessions[0].id, 's3', 'external change must not evict cache while overlapping own writes remain in flight');
+    setReleaseResolvers.shift()?.();
+    setReleaseResolvers.shift()?.();
+    await Promise.all([firstSave, secondSave]);
+    assert.strictEqual((await loadState()).sessions[0].id, 's5');
+
+    storage[STORAGE_KEY] = sessionFixture('s6');
+    fireStorageChange(storage[STORAGE_KEY], sessionFixture('s5'));
+    assert.strictEqual((await loadState()).sessions[0].id, 's6');
+
+    clearStateCache();
+    failNextGet = true;
+    assert.deepStrictEqual((await loadState()).sessions, [], 'storage read failure must return an empty safe state');
+    storage[STORAGE_KEY] = sessionFixture('s7');
+    clearStateCache();
+    await loadState();
+    failNextSet = true;
+    await assert.rejects(saveState(sessionFixture('failed')), /simulated storage write failure/);
+    storage[STORAGE_KEY] = sessionFixture('s8');
+    fireStorageChange(storage[STORAGE_KEY], sessionFixture('s7'));
+    assert.strictEqual((await loadState()).sessions[0].id, 's8', 'failed writes must release the cache guard');
   });
 });

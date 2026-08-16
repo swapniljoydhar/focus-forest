@@ -18,6 +18,7 @@ assert.equal(content.includes('content/content.css'), false, 'companion must not
 assert.equal(content.includes("getURL('content/content.css')"), false, 'companion CSS must not reconstruct a public extension asset URL');
 assert.doesNotMatch(content, /send\(['"]GET_SNAPSHOT['"]/, 'content scripts must request only the compact active view');
 assert.match(worker, /function isExtensionPageSender\(/, 'privileged operations must have an extension-page sender boundary');
+assert.match(worker, /Object\.hasOwn\(SCHEMAS, message\.type\)/, 'message validation must reject inherited schema property names');
 assert.match(worker, /case 'GET_SNAPSHOT': return isExtensionPageSender\(sender\)/, 'full snapshots must be restricted to extension pages');
 assert.match(content, /event\.isTrusted/, 'synthetic page clicks must not create navigation relationships');
 assert.match(dashboard, /createElementNS\(/, 'dashboard SVG data rendering must use DOM construction');
@@ -38,6 +39,9 @@ assert.match(newtab, /function: 'form\.submit', swallow: true/, 'New Tab submit 
 assert.match(dashboard, /function: 'detail\.click', swallow: true/, 'dashboard detail listener must swallow async failures');
 assert.match(settings, /function: 'save\.click', swallow: true/, 'settings save listener must swallow async failures');
 assert.match(content, /function: 'shadow\.click', swallow: true/, 'content Shadow DOM listener must swallow async failures');
+assert.match(content, /function: 'drag\.pointerdown', swallow: true/, 'content drag pointerdown listener must swallow async failures');
+assert.match(content, /function: 'drag\.pointermove', swallow: true/, 'content drag pointermove listener must swallow async failures');
+assert.match(content, /function: 'drag\.pointerup', swallow: true/, 'content drag pointerup listener must swallow async failures');
 assert.match(worker, /function: 'tabs\.onUpdated', swallow: true/, 'service-worker navigation listener must swallow async failures');
 assert.doesNotMatch(state, /return String\(value \|\| ''\)\.slice\(0, LIMITS\.URL\)/, 'canonicalUrl must not expose a raw malformed-string fallback');
 assert.match(state, /thresholds = DEFAULT_SETTINGS/, 'depth state must have a safe default threshold object');
@@ -48,5 +52,7 @@ assert.match(content, /showGrowthRitual/, 'companion branch growth should use an
 assert.match(content, /ff-growth-ritual/, 'companion ritual should have a named visual state');
 assert.match(content, /waitForGrowth\(1000/, 'companion ritual should hold the completion flicker for one second before notifying');
 assert.match(content, /prefers-reduced-motion/, 'companion ritual should respect reduced-motion preferences');
+assert.match(content, /let originRitualPlayed = false;\s*try \{ originRitualPlayed = sessionStorage\.getItem/, 'initial sessionStorage access must be guarded');
+assert.match(dashboard, /!event\.shiftKey && \(index === focusables\.length - 1 \|\| index < 0\)/, 'dashboard dialog must trap Tab when focus starts outside the dialog');
 assert.equal(/setInterval\(/.test(content), false, 'companion ritual must not introduce a continuous timer loop');
 console.log('static security contracts passed');

@@ -76,7 +76,7 @@ The error boundary now derives a `shouldRethrow` decision from `rethrow !== fals
 
 All direct event-listener registrations in popup, New Tab, dashboard, settings, the content companion, and navigation-related service-worker listeners were reviewed and converted to explicit swallow mode. This includes click, submit, input, change, keydown, pointer-adjacent navigation, SPA history, tab-update, tab-removal, and installation boundaries. Explicit render/load recovery helpers continue to use `.catch()` or enclosing `try/catch` blocks.
 
-The state layer now has a strict malformed URL contract, a current-runtime extension-origin contract, a safe default depth threshold, and direct cache tests for initial reads, external `storage.onChanged` invalidation, and the `ownWriteInFlight` guard. Chrome documents `storage.onChanged` as the supported change signal and describes storage as asynchronous and quota-limited [3]; the new tests exercise the local cache contract rather than assuming synchronous storage behavior.
+The state layer now has a strict malformed URL contract, a current-runtime extension-origin contract, a safe default depth threshold, and direct cache tests for initial reads, external `storage.onChanged` invalidation, and the `ownWritesInFlight` counter guard. Chrome documents `storage.onChanged` as the supported change signal and describes storage as asynchronous and quota-limited [3]; the new tests exercise the local cache contract rather than assuming synchronous storage behavior.
 
 The dashboard and popup repairs are intentionally non-punitive. A failed render does not delete data, and a missing session does not block the user or close a tab. The service worker retains bounded sessions, nodes, events, compost, pending redirects, SPA deduplication, and mutation behavior.
 
@@ -151,3 +151,53 @@ The remaining product trade-offs are intentional: broad HTTP(S) host permissions
 [3]: https://developer.chrome.com/docs/extensions/reference/api/storage "Chrome for Developers — chrome.storage API"
 
 [4]: https://developer.chrome.com/docs/extensions/develop/concepts/content-scripts "Chrome for Developers — Content scripts"
+
+
+## Second-pass follow-up audit — 17 August 2026
+
+A second inspection was performed from the published `49af7f21807edd2ce67fe739198a231c957682b4` tree after the requested fixes were re-checked directly. The pass re-read the manifest, popup, service worker, content script, New Tab, settings, dashboard, shared state, error tracing, and all relevant regression harnesses. It also ran a repository-integrity check over manifest references, HTML assets, source line endings, and runtime external-resource patterns.
+
+### Additional confirmed issues repaired
+
+| Finding | Evidence | Repair and coverage |
+|---|---|---|
+| Initial `sessionStorage.getItem()` could throw before the existing `try` blocks | Content-script startup read `ff-origin-ritual-played` directly; storage can be unavailable in some page contexts | Initialize the flag to `false`, guard the initial read, and add a static contract |
+| URL truncation could create malformed persisted or reopened values | Canonical and extension URL helpers sliced accepted values at the state limit | Reject overlong canonical, HTTP(S), new-tab, and current-extension URLs; add boundary tests |
+| Credentials could be persisted in a browsing node or compost link | HTTP(S) canonicalization retained URL username/password components | Reject URLs containing `url.username` or `url.password`; add a regression for `https://user:password@...` |
+| Overlapping `saveState()` calls could clear cache too early | A boolean write flag could become false when the first of two concurrent writes completed | Replace it with `ownWritesInFlight` counter semantics and test two held writes plus a subsequent external change |
+| Missing sender could crash the listener before rejection | Dispatcher accessed `sender.id` directly | Use `sender?.id` and add a missing-sender test |
+| Prototype-inherited message names or fields could pass loose checks | `SCHEMAS[message.type]` and `key in message` considered inherited properties | Require own `type`, use `Object.hasOwn(SCHEMAS, message.type)`, and require own schema fields; add `toString` and inherited-message regressions |
+| Companion drag pointer callbacks were not behind the async/error boundary contract | `pointerdown`, dynamically installed `pointermove`, and `pointerup` handlers were direct callbacks | Wrap all three callbacks with explicit swallow-mode boundaries and add static contracts |
+| Dashboard care-dialog focus trap did not handle focus entering from outside | `indexOf(document.activeElement)` returned `-1`, allowing a normal Tab to escape the dialog | Treat `index < 0` as a boundary and route focus to the first or last dialog control; add a static contract |
+| Repository-integrity checks were previously ad hoc | Manifest path and local-asset validation existed only as a one-off shell probe | Add dependency-free `test-repository-integrity.mjs` covering 9 manifest references, 4 HTML files, local assets, line endings, and runtime external-resource prohibitions |
+
+### Exact technical explanation of the requested fixes
+
+The **popup mission-ending race** occurs because the popup is a separate extension page from the New Tab, dashboard, and service worker. Its pause button requests a fresh snapshot asynchronously. Between the user opening the popup and the completion of that request, another context can end the active mission. The original code treated `snap.session` as non-null and immediately read `snap.session.interventionPaused`; when the mission had ended, that property access threw inside an asynchronous event listener.
+
+The applied fix is deliberately narrow. The handler now requests the snapshot, checks `if (!snap?.session) return;`, and only then derives the inverse pause value and sends `PAUSE_INTERVENTION`. It awaits the mutation and then awaits `renderSafely()` so the popup reconciles its display with the new state. The entire listener is registered through `wrapWithErrorBoundary(..., { ..., swallow: true })`, which logs the failure without creating an unhandled Promise rejection. The existing `safeRender().catch(...)` recovery path remains separate and still provides an empty-state message if rendering itself fails. This preserves agency: a mission that ended elsewhere is treated as a harmless no-op rather than resurrected or treated as an error requiring destructive recovery.
+
+The **stress-test sender-boundary blind spot** was caused by the test environment rather than the production guard. Production code rejects a message before dispatch when `sender?.id !== chrome.runtime.id`. The original stress mock had no `chrome.runtime.id` and defaulted to a sender without `id`; both sides were therefore `undefined`, so the comparison accidentally passed. The test could exercise hundreds of messages while never validating the actual identity boundary.
+
+The applied fix adds `chrome.runtime.id = 'test'` to the mock and defaults trusted stress senders to `{ id: chrome.runtime.id, tab }`. It then sends `CLEAR_DATA` using `{ id: 'untrusted-extension', ... }` and asserts that the pre-existing state is byte-for-byte unchanged. The service-worker behavioral harness additionally tests a missing sender, an inherited `toString` message type, and a message whose `type` is inherited through its prototype. These cases now return `null` without entering a privileged operation.
+
+### Remaining manual Chrome gaps and how to address them
+
+The remaining gaps are not ignored defects; they are scenarios whose most important evidence depends on real Chromium lifecycle, rendering, profiles, or assistive technology. They can be addressed with a repeatable clean-profile test protocol rather than informal clicking.
+
+| Gap | Exact coverage procedure | Evidence to capture |
+|---|---|---|
+| Restricted, PDF, Chrome-internal, and extension pages | In a clean profile, visit `chrome://newtab`, a PDF, `chrome://settings`, an extension page, and a normal HTTP(S) page. Confirm the companion appears only where the manifest matches and that no page closes or redirects unexpectedly. | Screenshots, tab URLs before/after, extension error console |
+| SPA and history navigation | Use GitHub, Google Search, YouTube, Notion, and a local same-origin test page. Click links, use `history.pushState`, browser Back/Forward, reload, and open same-destination links in a new tab. | Session node/event counts, parent IDs, duplicate-node checks, service-worker console errors |
+| Multiple windows and service-worker restart | Start a mission in Window A, open branches in Window B, close/reopen tabs, restart the browser, and invoke Go Home from the popup. | Origin tab ID/window ID, focused window, resulting URL, storage snapshot before/after |
+| Incognito | Install with the intended “Allow in incognito” setting, repeat a short mission, then compare regular and incognito storage behavior. Confirm the extension does not claim cross-profile state. | Separate profile snapshots and permission settings |
+| Keyboard, dialogs, and screen readers | Navigate popup, New Tab, dashboard, and settings entirely with Tab/Shift+Tab/Enter/Space/Escape. Open the care dialog from a non-dialog element and verify Tab cycles only through Cancel and Confirm. Run a screen reader or accessibility tree inspection. | Focus order, active-element traces, accessibility-tree output, screenshots |
+| Reduced motion, zoom, contrast, and narrow viewports | Test `prefers-reduced-motion: reduce`, 80–200% zoom, high-contrast/forced-colors where available, 320px width, long mission names, and long page titles. | Screenshots, overflow checks, focus visibility, ritual timing |
+| Storage quota and interrupted writes | Use a controlled profile or DevTools protocol to inject storage failure/near-quota conditions, then reload popup/dashboard/settings. Confirm a readable recovery state and no data destruction. | API error logs, state before/after, recovery UI screenshot |
+| Update and disable/re-enable lifecycle | Load version A, create data, reload or update to version B, disable/re-enable, and restart Chrome. Confirm `storage.local` persistence and cache reloading. | Commit/version, storage snapshot, service-worker lifecycle log |
+
+A practical automation layer can reduce most of this manual surface: launch Chromium with a fresh `--user-data-dir`, `--load-extension`, and remote debugging enabled; use the DevTools Protocol to create windows/tabs, dispatch keyboard input, read DOM/accessibility trees, collect console and extension errors, and save screenshots at each checkpoint. Real websites should be complemented by a local deterministic SPA fixture that performs `pushState`, redirects, target-blank opens, reloads, and delayed title changes. The remaining items that still need a human are screen-reader quality, forced-colors perception, visual hierarchy, and whether the garden metaphor remains calm rather than distracting.
+
+### Updated verification
+
+The second-pass focused suites and the complete matrix passed after these repairs: `test-error-tracing.mjs`, `test-runtime-contracts.mjs`, `test-state.mjs` with storage failure and overlapping-write coverage, `test-tree-layout.mjs`, `test-security.mjs`, `test-service-worker.mjs` with missing/prototype sender cases, `stress-service-worker.mjs`, `test-repository-integrity.mjs`, every JavaScript syntax check, `git diff --check`, and a clean-profile Chromium new-tab override smoke. The error-tracing test’s structured console output is expected because it deliberately injects failures to prove the swallow/rethrow contract.

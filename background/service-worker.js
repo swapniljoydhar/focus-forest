@@ -271,7 +271,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isRecord(message) || typeof message.type !== 'string') { sendResponse(null); return false; }
-  if (sender.id !== chrome.runtime.id) { sendResponse(null); return false; }
+  if (sender?.id !== chrome.runtime.id) { sendResponse(null); return false; }
   const tab = sender && typeof sender === 'object' && sender.tab && typeof sender.tab === 'object' ? sender.tab : null;
   if (!validateMessage(message)) { sendResponse(null); return false; }
   (async () => {
@@ -347,13 +347,13 @@ const TYPE_CHECKS = {
   object: (v) => v && typeof v === 'object' && !Array.isArray(v)
 };
 function validateMessage(message) {
-  if (!isRecord(message)) return false;
+  if (!isRecord(message) || !Object.hasOwn(message, 'type') || typeof message.type !== 'string') return false;
+  if (!Object.hasOwn(SCHEMAS, message.type)) return false;
   const schema = SCHEMAS[message.type];
-  if (!schema) return false;
   for (const [key, kind] of Object.entries(schema)) {
     const optional = kind.endsWith('?');
     const base = optional ? kind.slice(0, -1) : kind;
-    if (!(key in message)) {
+    if (!Object.hasOwn(message, key)) {
       if (!optional) return false;
       continue;
     }

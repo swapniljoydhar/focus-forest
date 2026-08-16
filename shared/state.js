@@ -34,9 +34,10 @@ export function canonicalUrl(value) {
   try {
     const url = new URL(String(value || ''));
     if (!['http:', 'https:'].includes(url.protocol)) return null;
+    if (url.username || url.password) return null;
     url.hash = '';
     [...url.searchParams.keys()].forEach((key) => { if (TRACKING_PARAMETERS.has(key.toLowerCase())) url.searchParams.delete(key); });
-    return url.href.slice(0, LIMITS.URL);
+    return url.href.length <= LIMITS.URL ? url.href : null;
   } catch {
     return null;
   }
@@ -68,10 +69,10 @@ const SAFE_CONFIDENCE = new Set(['direct', 'tab-inferred', 'external']);
 const SAFE_REASONS = new Set(['user_ended', 'mission_changed', 'browse_without_mission']);
 export function safeSessionUrl(value) {
   const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http;
-  if (/^chrome:\/\/newtab(?:\/|$)/i.test(raw)) return raw.slice(0, LIMITS.URL);
+  if (/^chrome:\/\/newtab(?:\/|$)/i.test(raw)) return raw.length <= LIMITS.URL ? raw : null;
   const extensionMatch = /^chrome-extension:\/\/([a-z0-9-]+)\/(.*)$/i.exec(raw);
   const extensionId = typeof chrome !== 'undefined' ? chrome.runtime?.id : null;
-  if (extensionMatch && extensionId && extensionMatch[1].toLowerCase() === String(extensionId).toLowerCase()) return raw.slice(0, LIMITS.URL);
+  if (extensionMatch && extensionId && extensionMatch[1].toLowerCase() === String(extensionId).toLowerCase()) return raw.length <= LIMITS.URL ? raw : null;
   return null;
 }
 function compactNode(node) {
@@ -121,7 +122,7 @@ export function normalizeSettings(value, fallback = emptyState().settings) {
 }
 
 let stateCache = null;
-let ownWriteInFlight = false;
+let ownWritesInFlight = 0;
 
 export async function loadState() {
   if (stateCache !== null) return stateCache;
@@ -135,12 +136,12 @@ export async function loadState() {
 }
 
 export async function saveState(state) {
-  ownWriteInFlight = true;
+  ownWritesInFlight += 1;
   try {
     await chrome.storage.local.set({ [STORAGE_KEY]: state });
     stateCache = state;
   } finally {
-    ownWriteInFlight = false;
+    ownWritesInFlight = Math.max(0, ownWritesInFlight - 1);
   }
   return state;
 }
@@ -156,6 +157,6 @@ export function clearStateCache() {
 // serialized mutation queue.
 if (typeof chrome !== 'undefined' && chrome.storage?.onChanged?.addListener) {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[STORAGE_KEY] && !ownWriteInFlight) stateCache = null;
+    if (area === 'local' && changes[STORAGE_KEY] && ownWritesInFlight === 0) stateCache = null;
   });
 }
