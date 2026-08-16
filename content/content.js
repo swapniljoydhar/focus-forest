@@ -84,8 +84,6 @@
     dragHandle.addEventListener('pointerup', onUp);
   });
 
-  function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
-
   async function loadSettings() {
     try {
       const snap = await send('GET_SNAPSHOT');
@@ -154,10 +152,10 @@
     stateEl.textContent = state;
   }
 
-  // DOM-safe choice card: all dynamic content set via textContent/elements, no innerHTML.
-  function showChoiceCard(depth) {
-    choiceCard.dataset.shownFor = location.href;
-    choiceCopy.replaceChildren();
+  // DOM-safe choice sheet: all dynamic content set via textContent/elements, no innerHTML.
+  function showChoiceSheet(depth) {
+    backdrop.dataset.shownFor = location.href;
+    sheetCopy.replaceChildren();
     const missionEl = document.createElement('q');
     missionEl.textContent = current?.mission || '';
     const depthEl = document.createElement('strong');
@@ -226,7 +224,7 @@
     }, WATCH_INTERVAL);
   }
 
-  const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; choiceCard.removeAttribute('data-shown-for'); safeRefresh(true); } };
+  const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; backdrop.removeAttribute('data-shown-for'); safeRefresh(true); } };
   const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation' });
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
   window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow' }), { passive: true });
