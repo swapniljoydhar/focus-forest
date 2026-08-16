@@ -46,7 +46,8 @@ function replaceState(nextState) {
 }
 
 function nodeHasTab(node, tabId) { return Number.isInteger(tabId) && (node.tabIds?.includes(tabId) || node.tabId === tabId); }
-function nodeForTab(session, tabId) { return [...session.nodes].reverse().find((node) => nodeHasTab(node, tabId) && !node.closedAt) || null; }
+const TERMINAL_STATES = new Set(['pruned', 'composted']);
+function nodeForTab(session, tabId) { return [...session.nodes].reverse().find((node) => nodeHasTab(node, tabId) && !node.closedAt && !TERMINAL_STATES.has(node.state)) || null; }
 function attachTab(node, tabId) { if (!Number.isInteger(tabId)) return false; node.tabIds ||= []; if (node.tabIds.includes(tabId)) return false; node.tabIds.push(tabId); return true; }
 function detachTab(node, tabId) { if (!Array.isArray(node.tabIds)) return false; const before = node.tabIds.length; node.tabIds = node.tabIds.filter((id) => id !== tabId); return before !== node.tabIds.length; }
 function moveTabToNode(session, tabId, targetId) { session.nodes.forEach((node) => { if (node.id !== targetId) detachTab(node, tabId); }); }
@@ -218,7 +219,7 @@ async function pruneNode(sessionId, nodeId, toCompost = false) {
     if (!session) return NO_CHANGE;
     const node = session.nodes.find((item) => item.id === nodeId && !item.closedAt);
     if (!node || node.depth === 0 || node.state === 'pruned') return NO_CHANGE;
-    node.state = 'pruned'; node.prunedAt = Date.now();
+    node.state = 'pruned'; node.prunedAt = Date.now(); node.tabIds = []; delete node.tabId;
     addEvent(session, 'pruned', { nodeId: node.id, depth: node.depth });
     if (toCompost && !state.compostItems.some((item) => item.url === node.url)) {
       state.compostItems.unshift({ id: makeId('compost'), url: node.url, title: compactText(node.title || node.url), mission: session.mission, depth: node.depth, savedAt: Date.now() });
