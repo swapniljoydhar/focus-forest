@@ -252,9 +252,8 @@ async function getSnapshot(sessionId = null, includeHistory = false) {
 
 chrome.runtime.onInstalled.addListener(() => {
   wrapWithErrorBoundary(async () => {
-    chrome.storage.local.get(STORAGE_KEY).then((result) => { 
-      if (!result[STORAGE_KEY]) chrome.storage.local.set({ [STORAGE_KEY]: emptyState() }); 
-    });
+    const result = await chrome.storage.local.get(STORAGE_KEY);
+    if (!result[STORAGE_KEY]) await saveState(emptyState());
   }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled' })();
 });
 
