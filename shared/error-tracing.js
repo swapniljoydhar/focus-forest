@@ -171,12 +171,14 @@ export function clearErrorLog() {
 }
 
 export function wrapWithErrorBoundary(fn, context = {}) {
+  const shouldRethrow = context.rethrow !== false && !context.swallow;
   return async (...args) => {
     try {
       return await fn(...args);
     } catch (error) {
       logError(error, { ...context, category: context.category || ERROR_CATEGORIES.UNKNOWN });
-      throw error;
+      if (shouldRethrow) throw error;
+      return undefined;
     }
   };
 }

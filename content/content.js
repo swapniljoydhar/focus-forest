@@ -18,9 +18,14 @@
     return trace;
   }
   function wrapWithErrorBoundary(fn, context = {}) {
+    const shouldRethrow = context.rethrow !== false && !context.swallow;
     return async (...args) => {
       try { return await fn(...args); }
-      catch (error) { logError(error, { ...context, category: context.category || ERROR_CATEGORIES.UNKNOWN }); throw error; }
+      catch (error) {
+        logError(error, { ...context, category: context.category || ERROR_CATEGORIES.UNKNOWN });
+        if (shouldRethrow) throw error;
+        return undefined;
+      }
     };
   }
   async function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
@@ -214,13 +219,13 @@
     else if (action === 'dismiss') { hideChoiceCard(); }
     else if (action === 'pause') { await send('PAUSE_INTERVENTION', { paused: !current?.interventionPaused }); await safeRefresh(false); }
     else if (action === 'minimize') { chip.classList.toggle('minimized'); minimizeBtn.textContent = chip.classList.contains('minimized') ? '+' : '\u2013'; }
-  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'shadow.click' }));
+  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'shadow.click', swallow: true }));
 
   shadow.addEventListener('keydown', wrapWithErrorBoundary((event) => {
     if (event.key === 'Escape' && !choiceCard.hidden) { hideChoiceCard(); return; }
-  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'shadow.keydown' }));
+  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'shadow.keydown', swallow: true }));
 
-  document.addEventListener('click', wrapWithErrorBoundary((event) => {
+  document.addEventListener('click', wrapWithErrorBoundary(async (event) => {
     if (!event.isTrusted || event.button !== 0 || event.defaultPrevented) return;
     const link = event.target.closest('a[href]');
     if (!link) return;
@@ -228,10 +233,10 @@
     try { target = new URL(link.href, location.href); } catch { return; }
     if (!['http:', 'https:'].includes(target.protocol) || (target.href.split('#')[0] === location.href.split('#')[0] && target.hash)) return;
     const opensElsewhere = link.target === '_blank' || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey;
-    send('LINK_CLICK', { url: target.href, title: link.textContent?.trim() || target.hostname, targetBlank: opensElsewhere });
-  }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'document.click' }), true);
+    await send('LINK_CLICK', { url: target.href, title: link.textContent?.trim() || target.hostname, targetBlank: opensElsewhere });
+  }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'document.click', swallow: true }), true);
 
-  const safeRefresh = wrapWithErrorBoundary(refresh, { category: ERROR_CATEGORIES.MESSAGING, function: 'refresh' });
+  const safeRefresh = wrapWithErrorBoundary(refresh, { category: ERROR_CATEGORIES.MESSAGING, function: 'refresh', swallow: true });
   async function refresh(observe = true) {
     try {
       if (observe) await send('OBSERVE_PAGE', { url: location.href, title: document.title });
@@ -254,13 +259,13 @@
   }
 
   const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; choiceCard.removeAttribute('data-shown-for'); safeRefresh(true); } };
-  const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation' });
+  const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation', swallow: true });
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
-  window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow' }), { passive: true });
-  document.addEventListener('visibilitychange', wrapWithErrorBoundary(() => { if (document.hidden) window.clearTimeout(watchTimer); else { safeRefresh(false); scheduleWatch(); } }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'visibilitychange' }));
+  window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow', swallow: true }), { passive: true });
+  document.addEventListener('visibilitychange', wrapWithErrorBoundary(() => { if (document.hidden) window.clearTimeout(watchTimer); else { safeRefresh(false); scheduleWatch(); } }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'visibilitychange', swallow: true }));
 
-  const safeLoadSettings = wrapWithErrorBoundary(loadSettings, { category: ERROR_CATEGORIES.MESSAGING, function: 'loadSettings' });
-  const safeScheduleWatch = wrapWithErrorBoundary(scheduleWatch, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'scheduleWatch' });
+  const safeLoadSettings = wrapWithErrorBoundary(loadSettings, { category: ERROR_CATEGORIES.MESSAGING, function: 'loadSettings', swallow: true });
+  const safeScheduleWatch = wrapWithErrorBoundary(scheduleWatch, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'scheduleWatch', swallow: true });
 
   safeLoadSettings();
   safeRefresh(true);

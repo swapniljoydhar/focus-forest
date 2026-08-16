@@ -22,7 +22,7 @@ async function init() {
 
 function initSafely() { return safeInit().catch((error) => { logError(error, { category: ERROR_CATEGORIES.UI_RENDER, function: 'initSafely' }); status.textContent = 'The forest could not read its local garden. You can still browse without a mission.'; input.focus(); }); }
 
-input.addEventListener('input', wrapWithErrorBoundary(updateCount, { category: ERROR_CATEGORIES.UI_RENDER, function: 'updateCount' }));
+input.addEventListener('input', wrapWithErrorBoundary(updateCount, { category: ERROR_CATEGORIES.UI_RENDER, function: 'updateCount', swallow: true }));
 form.addEventListener('submit', wrapWithErrorBoundary(async (event) => {
   event.preventDefault();
   const mission = input.value.trim();
@@ -32,10 +32,10 @@ form.addEventListener('submit', wrapWithErrorBoundary(async (event) => {
   input.value = '';
   updateCount();
   input.blur();
-}, { category: ERROR_CATEGORIES.MESSAGING, function: 'form.submit' }));
+}, { category: ERROR_CATEGORIES.MESSAGING, function: 'form.submit', swallow: true }));
 
-resume.addEventListener('click', wrapWithErrorBoundary(async () => { await message('GO_HOME'); status.textContent = 'Your current garden is ready in its origin tab.'; }, { category: ERROR_CATEGORIES.MESSAGING, function: 'resume.click' }));
-browse.addEventListener('click', wrapWithErrorBoundary(async () => { await message('END_MISSION', { reason: 'browse_without_mission' }); resume.hidden = true; status.textContent = 'No mission set. Browse freely \u2014 the forest stays quiet until you plant again.'; input.focus(); }, { category: ERROR_CATEGORIES.MESSAGING, function: 'browse.click' }));
+resume.addEventListener('click', wrapWithErrorBoundary(async () => { await message('GO_HOME'); status.textContent = 'Your current garden is ready in its origin tab.'; }, { category: ERROR_CATEGORIES.MESSAGING, function: 'resume.click', swallow: true }));
+browse.addEventListener('click', wrapWithErrorBoundary(async () => { await message('END_MISSION', { reason: 'browse_without_mission' }); resume.hidden = true; status.textContent = 'No mission set. Browse freely \u2014 the forest stays quiet until you plant again.'; input.focus(); }, { category: ERROR_CATEGORIES.MESSAGING, function: 'browse.click', swallow: true }));
 
 updateCount();
 initSafely();

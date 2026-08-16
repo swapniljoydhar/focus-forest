@@ -32,12 +32,13 @@ export function isSearchUrl(value) {
 
 export function canonicalUrl(value) {
   try {
-    const url = new URL(value);
+    const url = new URL(String(value || ''));
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
     url.hash = '';
     [...url.searchParams.keys()].forEach((key) => { if (TRACKING_PARAMETERS.has(key.toLowerCase())) url.searchParams.delete(key); });
     return url.href.slice(0, LIMITS.URL);
   } catch {
-    return String(value || '').slice(0, LIMITS.URL);
+    return null;
   }
 }
 
@@ -51,7 +52,7 @@ export function safeHttpUrl(value) {
   }
 }
 
-export function getDepthState(depth, paused = false, thresholds = THRESHOLDS) {
+export function getDepthState(depth, paused = false, thresholds = DEFAULT_SETTINGS) {
   if (paused) return 'paused';
   if (depth >= thresholds.choiceDepth) return 'interrupted';
   if (depth >= thresholds.gentleDepth) return 'desaturated';
@@ -65,9 +66,13 @@ export function activeSession(state) {
 const SAFE_STATES = new Set(['normal', 'desaturated', 'interrupted', 'paused', 'pruned', 'composted']);
 const SAFE_CONFIDENCE = new Set(['direct', 'tab-inferred', 'external']);
 const SAFE_REASONS = new Set(['user_ended', 'mission_changed', 'browse_without_mission']);
-function safeSessionUrl(value) {
+export function safeSessionUrl(value) {
   const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http;
-  return /^chrome:\/\/newtab(?:\/|$)/i.test(raw) || /^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) ? raw.slice(0, LIMITS.URL) : null;
+  if (/^chrome:\/\/newtab(?:\/|$)/i.test(raw)) return raw.slice(0, LIMITS.URL);
+  const extensionMatch = /^chrome-extension:\/\/([a-z0-9-]+)\/(.*)$/i.exec(raw);
+  const extensionId = typeof chrome !== 'undefined' ? chrome.runtime?.id : null;
+  if (extensionMatch && extensionId && extensionMatch[1].toLowerCase() === String(extensionId).toLowerCase()) return raw.slice(0, LIMITS.URL);
+  return null;
 }
 function compactNode(node) {
   if (!node || typeof node !== 'object') return null;

@@ -7,6 +7,8 @@ const dashboard = fs.readFileSync(new URL('./dashboard/app.js', import.meta.url)
 const popup = fs.readFileSync(new URL('./popup/app.js', import.meta.url), 'utf8');
 const newtab = fs.readFileSync(new URL('./newtab/app.js', import.meta.url), 'utf8');
 const worker = fs.readFileSync(new URL('./background/service-worker.js', import.meta.url), 'utf8');
+const settings = fs.readFileSync(new URL('./settings/app.js', import.meta.url), 'utf8');
+const state = fs.readFileSync(new URL('./shared/state.js', import.meta.url), 'utf8');
 
 assert.deepEqual(manifest.web_accessible_resources, [], 'the companion stylesheet should not be exposed to every web origin');
 assert.equal(manifest.permissions.includes('tabs'), false, 'the extension should not request the redundant tabs permission');
@@ -30,6 +32,18 @@ assert.match(dashboard, /tree-bole/, 'the rendered tree should include a structu
 assert.match(dashboard, /empty-trunk/, 'the empty garden should include an open trunk');
 assert.match(popup, /safeRender\(\)\.catch/, 'popup startup must show a recovery state when messaging fails');
 assert.match(newtab, /safeInit\(\)\.catch/, 'New Tab startup must show a recovery state when messaging fails');
+assert.match(popup, /function: 'pause\.click', swallow: true/, 'popup pause listener must swallow async failures');
+assert.match(popup, /if \(!snap\?\.session\) return/, 'popup pause listener must tolerate a mission ending between reads');
+assert.match(newtab, /function: 'form\.submit', swallow: true/, 'New Tab submit listener must swallow async failures');
+assert.match(dashboard, /function: 'detail\.click', swallow: true/, 'dashboard detail listener must swallow async failures');
+assert.match(settings, /function: 'save\.click', swallow: true/, 'settings save listener must swallow async failures');
+assert.match(content, /function: 'shadow\.click', swallow: true/, 'content Shadow DOM listener must swallow async failures');
+assert.match(worker, /function: 'tabs\.onUpdated', swallow: true/, 'service-worker navigation listener must swallow async failures');
+assert.doesNotMatch(state, /return String\(value \|\| ''\)\.slice\(0, LIMITS\.URL\)/, 'canonicalUrl must not expose a raw malformed-string fallback');
+assert.match(state, /thresholds = DEFAULT_SETTINGS/, 'depth state must have a safe default threshold object');
+assert.match(worker, /safeOriginUrl\(value\) \{ return safeSessionUrl\(value\) \|\| 'chrome:\/\/newtab'; \}/, 'persisted origins must use the current-extension-aware URL helper');
+assert.match(worker, /function safeNavigationUrl\(value\) \{ return safeSessionUrl\(value\); \}/, 'Go Home navigation must use the current-extension-aware URL helper');
+assert.equal(worker.includes('chrome-extension://[a-z0-9-]+/'), false, 'service worker must not accept arbitrary extension IDs in navigation URLs');
 assert.match(content, /showGrowthRitual/, 'companion branch growth should use an explicit bounded ritual');
 assert.match(content, /ff-growth-ritual/, 'companion ritual should have a named visual state');
 assert.match(content, /waitForGrowth\(1000/, 'companion ritual should hold the completion flicker for one second before notifying');

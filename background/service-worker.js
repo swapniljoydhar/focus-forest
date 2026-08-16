@@ -1,4 +1,4 @@
-import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, saveState } from '../shared/state.js';
+import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState } from '../shared/state.js';
 import { logError, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
@@ -78,8 +78,8 @@ function isRedirectLike(value) {
 function isRecord(value) { return value && typeof value === 'object' && !Array.isArray(value); }
 function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : null; }
 function safeReason(value) { return ['user_ended', 'mission_changed', 'browse_without_mission'].includes(value) ? value : 'user_ended'; }
-function safeOriginUrl(value) { const raw = String(value || ''); return safeHttpUrl(raw) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) ? raw.slice(0, LIMITS.URL) : 'chrome://newtab'); }
-function safeNavigationUrl(value) { const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http; if (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) || raw === 'chrome://newtab') return raw.slice(0, LIMITS.URL); return null; }
+function safeOriginUrl(value) { return safeSessionUrl(value) || 'chrome://newtab'; }
+function safeNavigationUrl(value) { return safeSessionUrl(value); }
 function sameOriginUrl(actual, expected) { const expectedHttp = safeHttpUrl(expected); return expectedHttp ? safeHttpUrl(actual) === expectedHttp : String(actual || '') === String(expected || ''); }
 function isExtensionPageSender(sender) { const id = chrome.runtime?.id; return typeof id === 'string' && typeof sender?.url === 'string' && sender.url.startsWith(`chrome-extension://${id}/`); }
 
@@ -266,7 +266,7 @@ chrome.runtime.onInstalled.addListener(() => {
   wrapWithErrorBoundary(async () => {
     const result = await chrome.storage.local.get(STORAGE_KEY);
     if (!result[STORAGE_KEY]) await saveState(emptyState());
-  }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled' })();
+  }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled', swallow: true })();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -374,13 +374,13 @@ chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
     const tab = await chrome.tabs.get(details.tabId);
     if (!tab?.url) return;
     await trackLink({ tabId: tab.id, url: tab.url, title: tab.title, targetBlank: false, windowId: Number.isInteger(tab.windowId) ? tab.windowId : null });
-  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'webNavigation.onHistoryStateUpdated' })(details);
+  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'webNavigation.onHistoryStateUpdated', swallow: true })(details);
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   return wrapWithErrorBoundary(async (tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url) await observeTab(tabId, tab.url, tab.title, tab.openerTabId, tab.windowId);
-  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onUpdated' })(tabId, changeInfo, tab);
+  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onUpdated', swallow: true })(tabId, changeInfo, tab);
 });
 chrome.tabs.onRemoved.addListener((tabId) => {
   return wrapWithErrorBoundary(async (tabId) => {
@@ -398,5 +398,5 @@ chrome.tabs.onRemoved.addListener((tabId) => {
       if (!node.tabIds?.length) node.closedAt = Date.now();
       return node;
     });
-  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onRemoved' })(tabId);
+  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onRemoved', swallow: true })(tabId);
 });

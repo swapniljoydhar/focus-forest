@@ -38,10 +38,10 @@ async function load() {
     status.textContent = 'The forest could not read its local rhythm. Try again.'; 
   } 
 }
-gentle.addEventListener('input', wrapWithErrorBoundary(sync, { category: ERROR_CATEGORIES.UI_RENDER, function: 'gentle.input' }));
-choice.addEventListener('input', wrapWithErrorBoundary(sync, { category: ERROR_CATEGORIES.UI_RENDER, function: 'choice.input' }));
-motion.addEventListener('change', wrapWithErrorBoundary(markDirty, { category: ERROR_CATEGORIES.UI_RENDER, function: 'motion.change' }));
-document.querySelectorAll('input[name="growth-animation"]').forEach((radio) => radio.addEventListener('change', wrapWithErrorBoundary(markDirty, { category: ERROR_CATEGORIES.UI_RENDER, function: 'growth-animation.change' })));
+gentle.addEventListener('input', wrapWithErrorBoundary(sync, { category: ERROR_CATEGORIES.UI_RENDER, function: 'gentle.input', swallow: true }));
+choice.addEventListener('input', wrapWithErrorBoundary(sync, { category: ERROR_CATEGORIES.UI_RENDER, function: 'choice.input', swallow: true }));
+motion.addEventListener('change', wrapWithErrorBoundary(markDirty, { category: ERROR_CATEGORIES.UI_RENDER, function: 'motion.change', swallow: true }));
+document.querySelectorAll('input[name="growth-animation"]').forEach((radio) => radio.addEventListener('change', wrapWithErrorBoundary(markDirty, { category: ERROR_CATEGORIES.UI_RENDER, function: 'growth-animation.change', swallow: true })));
 save.addEventListener('click', wrapWithErrorBoundary(async () => { 
   sync(); 
   try { 
@@ -53,7 +53,7 @@ save.addEventListener('click', wrapWithErrorBoundary(async () => {
     logError(error, { category: ERROR_CATEGORIES.MESSAGING, function: 'save.click' });
     status.textContent = 'The rhythm could not be saved. Nothing was changed.'; 
   } 
-}, { category: ERROR_CATEGORIES.MESSAGING, function: 'save.click' }));
+}, { category: ERROR_CATEGORIES.MESSAGING, function: 'save.click', swallow: true }));
 document.querySelector('#reset').addEventListener('click', wrapWithErrorBoundary(async () => { 
   try { 
     await message('UPDATE_SETTINGS', { settings: original }); 
@@ -70,5 +70,5 @@ document.querySelector('#reset').addEventListener('click', wrapWithErrorBoundary
     logError(error, { category: ERROR_CATEGORIES.MESSAGING, function: 'reset.click' });
     status.textContent = 'The original rhythm could not be restored.'; 
   } 
-}, { category: ERROR_CATEGORIES.MESSAGING, function: 'reset.click' }));
+}, { category: ERROR_CATEGORIES.MESSAGING, function: 'reset.click', swallow: true }));
 safeLoad();

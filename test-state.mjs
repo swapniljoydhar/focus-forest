@@ -1,7 +1,73 @@
-﻿import { describe, it } from 'node:test';
-import assert from 'node:assert';
+﻿import assert from 'node:assert';
+import { describe, it } from 'node:test';
 
-const { isSearchUrl, safeHttpUrl, normalizeSettings, compactText, getDepthState, LIMITS, DEFAULT_SETTINGS, normalizeState, emptyState } = await import('./shared/state.js');
+const storage = {};
+const changeListeners = [];
+let holdNextSet = false;
+let setStartedResolve = null;
+let releaseHeldSet = null;
+
+globalThis.chrome = {
+  runtime: { id: 'test' },
+  storage: {
+    local: {
+      async get(key) {
+        return key in storage ? { [key]: structuredClone(storage[key]) } : {};
+      },
+      async set(value) {
+        Object.assign(storage, structuredClone(value));
+        if (!holdNextSet) return;
+        holdNextSet = false;
+        setStartedResolve?.();
+        await new Promise((resolve) => { releaseHeldSet = resolve; });
+      }
+    },
+    onChanged: {
+      addListener(listener) { changeListeners.push(listener); }
+    }
+  }
+};
+
+const {
+  STORAGE_KEY,
+  isSearchUrl,
+  safeHttpUrl,
+  safeSessionUrl,
+  canonicalUrl,
+  normalizeSettings,
+  compactText,
+  getDepthState,
+  LIMITS,
+  DEFAULT_SETTINGS,
+  normalizeState,
+  emptyState,
+  loadState,
+  saveState,
+  clearStateCache
+} = await import('./shared/state.js');
+
+function fireStorageChange(newValue, oldValue = undefined) {
+  for (const listener of changeListeners) {
+    listener({ [STORAGE_KEY]: { oldValue, newValue } }, 'local');
+  }
+}
+
+function sessionFixture(id) {
+  return {
+    sessions: [{
+      id,
+      mission: 'm',
+      status: 'active',
+      startedAt: 1,
+      origin: { url: 'https://example.com', title: 'Example' },
+      nodes: [{ id: `${id}-n`, url: 'https://example.com/page', title: 'Page', parentId: null, depth: 0, state: 'normal' }],
+      events: []
+    }],
+    activeSessionId: id,
+    compostItems: [],
+    settings: { ...DEFAULT_SETTINGS }
+  };
+}
 
 describe('shared/state.js core functions', () => {
   it('compactText trims and truncates', () => {
@@ -33,11 +99,28 @@ describe('shared/state.js core functions', () => {
     assert.deepStrictEqual(normalizeSettings({ growthAnimationTrigger: 'invalid' }), { interventionsPaused: false, gentleDepth: 4, choiceDepth: 5, ambientMotion: true, growthAnimationTrigger: 'mission-origin' });
   });
 
-  it('getDepthState maps depth to states', () => {
+  it('getDepthState maps explicit and default thresholds to states', () => {
     assert.strictEqual(getDepthState(0, false, { gentleDepth: 4, choiceDepth: 5 }), 'normal');
     assert.strictEqual(getDepthState(4, false, { gentleDepth: 4, choiceDepth: 5 }), 'desaturated');
     assert.strictEqual(getDepthState(5, false, { gentleDepth: 4, choiceDepth: 5 }), 'interrupted');
     assert.strictEqual(getDepthState(3, true, { gentleDepth: 4, choiceDepth: 5 }), 'paused');
+    assert.strictEqual(getDepthState(4), 'desaturated');
+    assert.strictEqual(getDepthState(5), 'interrupted');
+  });
+
+  it('canonicalUrl rejects malformed values instead of returning unsafe raw strings', () => {
+    assert.strictEqual(canonicalUrl('not-a-url'), null);
+    assert.strictEqual(canonicalUrl('javascript:alert(1)'), null);
+    assert.strictEqual(canonicalUrl('https://example.com/path?utm_source=x#fragment'), 'https://example.com/path');
+  });
+
+  it('safeSessionUrl accepts only the current extension origin or new-tab placeholder', () => {
+    assert.strictEqual(safeSessionUrl('chrome://newtab'), 'chrome://newtab');
+    assert.strictEqual(safeSessionUrl('chrome-extension://test/newtab/index.html'), 'chrome-extension://test/newtab/index.html');
+    assert.strictEqual(safeSessionUrl('chrome-extension://test/'), 'chrome-extension://test/');
+    assert.strictEqual(safeSessionUrl('chrome-extension://other/newtab/index.html'), null);
+    assert.strictEqual(safeSessionUrl('chrome-extension://test'), null);
+    assert.strictEqual(safeSessionUrl('javascript:alert(1)'), null);
   });
 });
 
@@ -95,11 +178,8 @@ describe('normalizeState migration and bounds', () => {
       compostItems: [{ id: 'c1', url: 'javascript:alert(1)', title: 'x', mission: 'm', depth: 1, savedAt: 1 }]
     };
     const result = normalizeState(poisoned);
-    // sessions with no valid origin url get the chrome://newtab fallback
     assert.strictEqual(result.sessions[0].origin.url, 'chrome://newtab');
-    // a node whose url is javascript: is dropped entirely (compactNode returns null)
     assert.strictEqual(result.sessions[0].nodes.length, 0);
-    // compost items with javascript: urls are filtered out
     assert.strictEqual(result.compostItems.length, 0);
   });
 
@@ -119,5 +199,38 @@ describe('normalizeState migration and bounds', () => {
       assert.ok(sess.events.length <= LIMITS.EVENTS_PER_SESSION, `events ${sess.events.length}`);
     }
     assert.ok(result.compostItems.length <= LIMITS.COMPOST, `compost ${result.compostItems.length}`);
+  });
+});
+
+describe('storage cache and invalidation', () => {
+  it('caches reads, invalidates on external storage changes, and ignores changes during own writes', async () => {
+    clearStateCache();
+    storage[STORAGE_KEY] = sessionFixture('s1');
+    const first = await loadState();
+    storage[STORAGE_KEY] = sessionFixture('s2');
+    assert.strictEqual((await loadState()).sessions[0].id, 's1');
+
+    fireStorageChange(storage[STORAGE_KEY], sessionFixture('s1'));
+    const refreshed = await loadState();
+    assert.strictEqual(refreshed.sessions[0].id, 's2');
+
+    const next = sessionFixture('s3');
+    holdNextSet = true;
+    let resolveStarted;
+    const started = new Promise((resolve) => { resolveStarted = resolve; });
+    setStartedResolve = resolveStarted;
+    const savePromise = saveState(next);
+    await started;
+    fireStorageChange(next, refreshed);
+    assert.strictEqual((await loadState()).sessions[0].id, 's2', 'own-write change must not evict cache while save is in flight');
+    releaseHeldSet?.();
+    await savePromise;
+    assert.strictEqual((await loadState()).sessions[0].id, 's3');
+
+    storage[STORAGE_KEY] = sessionFixture('s4');
+    fireStorageChange(storage[STORAGE_KEY], next);
+    assert.strictEqual((await loadState()).sessions[0].id, 's4');
+    setStartedResolve = null;
+    releaseHeldSet = null;
   });
 });
