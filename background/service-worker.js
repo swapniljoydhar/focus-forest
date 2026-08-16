@@ -311,12 +311,38 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+const SCHEMAS = {
+  GET_SNAPSHOT: {},
+  GET_ACTIVE_VIEW: {},
+  START_MISSION: { mission: 'string' },
+  END_MISSION: {},
+  LINK_CLICK: { url: 'string', title: 'string?', targetBlank: 'boolean?' },
+  OBSERVE_PAGE: { url: 'string', title: 'string?' },
+  COMPOST: { url: 'string', title: 'string?' },
+  PAUSE_INTERVENTION: { paused: 'boolean' },
+  UPDATE_SETTINGS: { settings: 'object' },
+  DELETE_COMPOST: { id: 'string' },
+  PRUNE_NODE: { sessionId: 'string', nodeId: 'string', toCompost: 'boolean?' },
+  DELETE_SESSION: { sessionId: 'string' },
+  CLEAR_DATA: {},
+  GO_HOME: {}
+};
+const TYPE_CHECKS = {
+  string: (v) => typeof v === 'string',
+  boolean: (v) => typeof v === 'boolean',
+  object: (v) => v && typeof v === 'object' && !Array.isArray(v)
+};
 function validateMessage(message) {
   if (!isRecord(message)) return false;
-  const required = { GET_SNAPSHOT: [], GET_ACTIVE_VIEW: [], START_MISSION: ['mission'], END_MISSION: [], LINK_CLICK: ['url'], OBSERVE_PAGE: ['url'], COMPOST: ['url'], PAUSE_INTERVENTION: ['paused'], UPDATE_SETTINGS: ['settings'], DELETE_COMPOST: ['id'], PRUNE_NODE: ['sessionId', 'nodeId'], DELETE_SESSION: ['sessionId'], CLEAR_DATA: [], GO_HOME: [] };
-  const schema = required[message.type];
+  const schema = SCHEMAS[message.type];
   if (!schema) return false;
-  for (const key of schema) { if (!(key in message)) return false; }
+  for (const [key, kind] of Object.entries(schema)) {
+    const optional = kind.endsWith('?');
+    const base = optional ? kind.slice(0, -1) : kind;
+    if (!(key in message)) return optional;
+    if (message[key] == null) return optional;
+    if (!TYPE_CHECKS[base](message[key])) return false;
+  }
   return true;
 }
 
