@@ -1,4 +1,4 @@
-export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
+﻿export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
 export const STORAGE_KEY = 'focusForestState';
 export const SCHEMA_VERSION = 2;
 export const LIMITS = { SESSIONS: 12, NODES_PER_SESSION: 96, EVENTS_PER_SESSION: 72, COMPOST: 80, TITLE: 120, URL: 1024 };
@@ -82,7 +82,7 @@ function compactEvent(event) {
   if (typeof event.nodeId === 'string') result.nodeId = compactText(event.nodeId, 120);
   if (typeof event.mission === 'string') result.mission = compactText(event.mission, 140);
   if (typeof event.url === 'string' && safeHttpUrl(event.url)) result.url = safeHttpUrl(event.url);
-  if (Number.isFinite(event.depth)) result.depth = Math.max(0, Math.min(LIMITS.NODES_PER_SESSION, event.depth));
+  if (Number.isFinite(event.depth)) result.depth = Math.max(0, Math.min(LIMITS.NODES_PER_SESSION, Number(event.depth) || 0));
   if (SAFE_REASONS.has(event.reason)) result.reason = event.reason;
   return result;
 }
@@ -115,10 +115,14 @@ export function normalizeSettings(value, fallback = emptyState().settings) {
   return { interventionsPaused: Boolean(source.interventionsPaused), gentleDepth, choiceDepth, ambientMotion: source.ambientMotion !== false, growthAnimationTrigger };
 }
 
+let stateCache = null;
+
 export async function loadState() {
+  if (stateCache !== null) return stateCache;
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY);
-    return normalizeState(result[STORAGE_KEY]);
+    stateCache = normalizeState(result[STORAGE_KEY]);
+    return stateCache;
   } catch {
     return emptyState();
   }
@@ -126,9 +130,10 @@ export async function loadState() {
 
 export async function saveState(state) {
   await chrome.storage.local.set({ [STORAGE_KEY]: state });
+  stateCache = state;
   return state;
 }
 
-export function findNode(session, tabId) {
-  return session?.nodes.find((node) => (node.tabIds?.includes(tabId) || node.tabId === tabId) && !node.closedAt) || null;
+export function clearStateCache() {
+  stateCache = null;
 }

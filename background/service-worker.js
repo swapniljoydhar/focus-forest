@@ -1,5 +1,5 @@
-import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, canonicalUrl, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, saveState } from '../shared/state.js';
-import { logError, logCritical, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
+import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, saveState } from '../shared/state.js';
+import { logError, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
 const MAX_PENDING_BRANCHES = 64;
@@ -24,6 +24,7 @@ function mutate(mutator) {
   });
   mutationQueue = run.catch((error) => {
     logError(error, { category: ERROR_CATEGORIES.STATE_MUTATION, component: 'service-worker', function: 'mutate-catch' });
+    clearStateCache();
     return undefined;
   });
   return run;
@@ -236,6 +237,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!isRecord(message) || typeof message.type !== 'string') { sendResponse(null); return false; }
+  if (sender.id !== chrome.runtime.id) { sendResponse(null); return false; }
   const tab = sender && typeof sender === 'object' && sender.tab && typeof sender.tab === 'object' ? sender.tab : null;
   if (!validateMessage(message)) { sendResponse(null); return false; }
   (async () => {
@@ -312,10 +314,9 @@ chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
     if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return;
     spaDedup.set(dedupKey, Date.now());
     setTimeout(() => spaDedup.delete(dedupKey), 1500);
-    chrome.tabs.get(details.tabId, (tab) => {
-      if (chrome.runtime.lastError || !tab?.url) return;
-      trackLink({ tabId: tab.id, url: tab.url, title: tab.title, targetBlank: false, windowId: Number.isInteger(tab.windowId) ? tab.windowId : null });
-    });
+    const tab = await chrome.tabs.get(details.tabId);
+    if (!tab?.url) return;
+    await trackLink({ tabId: tab.id, url: tab.url, title: tab.title, targetBlank: false, windowId: Number.isInteger(tab.windowId) ? tab.windowId : null });
   }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'webNavigation.onHistoryStateUpdated' })(details);
 });
 

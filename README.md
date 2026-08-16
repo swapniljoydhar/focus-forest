@@ -1,10 +1,10 @@
-# Focus Forest
+﻿# Focus Forest
 
-Focus Forest is a calm, local-first Chrome extension that helps a person return to intention when useful research gradually becomes wandering. It contains **no generative AI, no summarizer, no remote model, no embeddings, and no page-content classifier**. Its intelligence is a transparent branch model built only from browser navigation signals. It is not a domain blocker and does not judge whether a page is relevant. It observes how pages are reached, keeps the current mission visible, and offers a gentle moment of choice when a tracked branch becomes unusually deep.
+Focus Forest is a calm, local-first Chrome extension that helps you return to intention when useful research gradually becomes wandering. It contains **no generative AI, no summarizer, no remote model, no embeddings, and no page-content classifier**. Its intelligence is a transparent branch model built only from browser navigation signals. It is not a domain blocker and does not judge whether a page is relevant. It observes how pages are reached, keeps the current mission visible, and offers a gentle moment of choice when a tracked branch becomes unusually deep.
 
 ## The experience
 
-Open a new tab and plant a mission such as “Compare laptops for university.” The mission chip stays quietly available on supported pages. Related links grow healthy branches. At a deeper branch, the page becomes subtly quieter and the chip says that the branch is getting long. At the interruption threshold, the extension offers three equal choices: **Return to my mission**, **Save this for later**, or **Start a new mission**.
+Open a new tab and plant a mission such as "Compare laptops for university." The mission chip stays quietly available on supported pages. Related links grow healthy branches. At a deeper branch, the page becomes subtly quieter and the chip says that the branch is getting long. At the interruption threshold, the extension offers three equal choices: **Return to my mission**, **Save this for later**, or **Start a new mission**.
 
 A garden view preserves completed missions locally. It shows what grew from the intention, where the path changed, and which curiosities were composted for later. The garden is a reflection, not a productivity score.
 
@@ -15,6 +15,22 @@ A garden view preserves completed missions locally. It shows what grew from the 
 3. Choose **Load unpacked**.
 4. Select this `focus-forest` directory.
 5. Open a new tab and plant a mission.
+
+## File structure
+
+```text
+focus-forest/
+  manifest.json
+  background/service-worker.js
+  content/content.js
+  shared/state.js
+  shared/error-tracing.js
+  popup/
+  newtab/
+  dashboard/
+  settings/
+  icons/
+```
 
 ## Navigation semantics
 
@@ -36,7 +52,7 @@ The mission chip, choice sheet, and garden-care dialog use semantic controls, vi
 
 ## Living garden and branch care
 
-The garden dashboard renders the deterministic session graph as a living rooted tree with four visual modes: seed, sapling, canopy, and deep. The mission root sits at the base of a centered trunk; first-level paths open into a sparse horizontal limb junction, deeper paths rise as side branches, and every terminal node becomes a connected leaf tip. In the sparse seed and sapling modes, the illustration includes a substantial organic bole, a planted root flare, unequal curved shoots, and two visible leaf-buds even before the browsing canopy is dense. Neutral paths appear as side trails, long paths use quiet overgrowth, and completed gardens settle into a distinct resting palette. Empty gardens show a small open-trunk sapling rather than an enclosed loop. To keep dense sessions readable, labels yield when a branch lane is crowded while every node remains keyboard-selectable and the selected-path panel provides depth, relationship confidence, parent context, and care actions. **Prune this path** and **Return to compost** change only the local visual state and preserve the historical trail note.
+The garden dashboard renders the deterministic session graph as a living rooted tree with four visual modes: `seed`, `sapling`, `canopy`, and `deep`. The mission root sits at the base of a centered trunk; first-level paths open into a sparse horizontal limb junction, deeper paths rise as side branches, and every terminal node becomes a connected leaf tip. In the sparse seed and sapling modes, the illustration includes a substantial organic bole, a planted root flare, unequal curved shoots, and two visible leaf-buds even before the browsing canopy is dense. Neutral paths appear as side trails, long paths use quiet overgrowth, and completed gardens settle into a distinct resting palette. Empty gardens show a small open-trunk sapling rather than an enclosed loop. To keep dense sessions readable, labels yield when a branch lane is crowded while every node remains keyboard-selectable and the selected-path panel provides depth, relationship confidence, parent context, and care actions. **Prune this path** and **Return to compost** change only the local visual state and preserve the historical trail note.
 
 The dashboard tree uses native SVG DOM construction and CSS transitions only. It does not run a frame loop, use Canvas, download images, or add a rendering dependency. A centered planted root feeds a visible bole and trunk fork; primary limbs open across a stable branch level, secondary branches rise with depth, and terminal nodes become attached leaves. Branch strokes taper and quiet with depth, while saved and pruned paths remain connected through dash and opacity treatment. Labels yield when neighboring branches are crowded and the selected-path panel provides the full context. Reduced-motion preferences disable the growth transitions. The New Tab uses only short entrance motion; it has no continuous CSS animation loops and can scroll safely on short viewports so the recovery choices are not clipped.
 
@@ -48,7 +64,7 @@ The garden dashboard provides **Forget this garden** for removing one selected l
 
 ## Tending controls and completion ritual
 
-Open **Tend the forest** from the popup or Chrome’s extension details to choose when the page grows quieter and when the choice sheet appears. The extension enforces a one-branch gap between those moments. Ambient motion can be turned off, and every setting stays local.
+Open **Tend the forest** from the popup or Chrome's extension details to choose when the page grows quieter and when the choice sheet appears. The extension enforces a one-branch gap between those moments. Ambient motion can be turned off, and every setting stays local.
 
 Ending a mission opens a small reflection moment with only deterministic facts: pages grown, deepest branch, and saved curiosities. The user can let the garden rest, keep tending, or return to the garden view. No session is graded.
 
@@ -56,16 +72,16 @@ Redirect-like URLs are treated as structural transport when they immediately lea
 
 ## Low-memory design
 
-The runtime is dependency-free and uses native HTML, CSS, and SVG. Page scripts receive only a compact active-view object rather than the full garden history. The service worker avoids storage writes for no-op observations, caps sessions, branches, events, compost, aliases, and pending relationship records, canonicalizes URLs, and injects only once into top-level HTTP(S) documents. Ambient visuals are CSS/SVG layers rather than images, video, Canvas loops, or external fonts.
+The runtime is dependency-free and uses native HTML, CSS, and SVG. Page scripts receive only a compact active-view object rather than the full garden history. The service worker caches normalized state in memory to reduce storage round-trips, avoids storage writes for no-op observations, caps sessions, branches, events, compost, aliases, and pending relationship records, canonicalizes URLs, and injects only once into top-level HTTP(S) documents. Ambient visuals are CSS/SVG layers rather than images, video, Canvas loops, or external fonts.
 
-## Security and reliability audit
+## Security and reliability
 
-The service worker treats runtime messages and content-script payloads as untrusted inputs. It rejects malformed message shapes, validates sender-tab metadata and HTTP(S) URLs, ignores synthetic page-dispatched clicks, serializes storage mutations, bounds pending relationships, clears redirect state when tabs are removed, keys target-blank relationships by source tab plus destination, detaches all tab aliases when a path is composted, and revalidates the stored origin tab before Go Home. If the tab ID was reused or the origin moved to another window, it focuses only the validated origin window; otherwise it opens a safe new origin tab without closing anything. The redundant `tabs` permission has been removed. The companion now owns its static CSS inside a closed ShadowRoot; no companion stylesheet is exposed as a web-accessible resource. Dashboard data-bearing lists and detail controls use DOM construction, while popup, New Tab, and dashboard startup failures show local recovery copy instead of remaining blank.
+The service worker validates sender identity, treats runtime messages and content-script payloads as untrusted inputs, and rejects malformed message shapes. It validates sender-tab metadata and HTTP(S) URLs, ignores synthetic page-dispatched clicks, serializes storage mutations, bounds pending relationships, clears redirect state when tabs are removed, keys target-blank relationships by source tab plus destination, detaches all tab aliases when a path is composted, and revalidates the stored origin tab before Go Home. If the tab ID was reused or the origin moved to another window, it focuses only the validated origin window; otherwise it opens a safe new origin tab without closing anything. The companion renders inside a closed `ShadowRoot` and uses DOM-safe construction for dynamic content; no companion stylesheet is exposed as a web-accessible resource. Dashboard data-bearing lists and detail controls use DOM construction, while popup, New Tab, and dashboard startup failures show local recovery copy instead of remaining blank.
 
-The audit inventory and primary-source comparison are recorded in [`SECURITY_REVIEW_2026-08-15.md`](SECURITY_REVIEW_2026-08-15.md). Run `node test-security.mjs` for static boundary contracts and `node stress-service-worker.mjs` for concurrent navigation, malformed-message, storage-bound, and threshold-ordering stress fixtures. These checks supplement `node test-service-worker.mjs`.
+For a detailed security review, see [`SECURITY_REVIEW_2026-08-15.md`](SECURITY_REVIEW_2026-08-15.md) and [`SECURITY.md`](SECURITY.md).
+
+The security review and primary-source comparison are recorded in [`SECURITY_REVIEW_2026-08-15.md`](SECURITY_REVIEW_2026-08-15.md). Automated checks include syntax validation, deterministic behavior, depth-mode contracts, focus-preserving branch selection, no-loop/no-network runtime boundaries, no-continuous-animation CSS checks, and no-AI references. Real-browser testing is still required for page-specific rendering, restricted origins, redirects, SPA behavior, multiple windows, keyboard focus, popup sizing, and Chrome profile differences.
 
 ## Development and validation
 
-The source intentionally remains dependency-light and loadable without a build step. The service worker is the source of truth; content scripts render page UI and report navigation signals; New Tab, popup, and dashboard are separate extension pages. Run `node test-service-worker.mjs` for the deterministic mocked-Chrome behavioral suite and `node test-tree-layout.mjs` for centered-root, trunk-fork, connected-edge, malformed-parent, label-spacing, and deterministic-geometry invariants. Additional checks cover unsafe URL rejection, invalid identifier rejection, serialized state mutation, bounded storage normalization, rooted tree topology, terminal-leaf rendering, collision-reduced labels, shape-based legend, grouped controls, local confirmation dialog, popup density, closed-shadow companion isolation, safe SVG DOM construction, no-loop/no-network runtime boundaries, and no-AI references.
-
-This is a polished MVP prototype, not a Chrome Web Store-certified release. The depth-aware redesign was informed by comparison with [History Tree](https://github.com/initialshl/history-tree), [Galaxy Tab History Graph](https://github.com/Katee/galaxy-tab), and [Focus Pilot](https://github.com/Nahid-mahmud555/focus-pilot-pro-official), but no code or dependency was imported. Automated checks pass for syntax, deterministic behavior, depth-mode contracts, focus-preserving branch selection, no-loop/no-network runtime boundaries, no-continuous-animation CSS checks, and no-AI references. Real-browser testing is still required for page-specific rendering, restricted origins, redirects, SPA behavior, multiple windows, keyboard focus, popup sizing, and Chrome profile differences.
+The source intentionally remains dependency-light and loadable without a build step. The service worker is the source of truth; content scripts render page UI and report navigation signals; New Tab, popup, and dashboard are separate extension pages. This is a polished MVP prototype, not a Chrome Web Store-certified release. The depth-aware redesign was informed by comparison with [History Tree](https://github.com/initialshl/history-tree), [Galaxy Tab History Graph](https://github.com/Katee/galaxy-tab-history-graph), and [Focus Pilot](https://github.com/Nahid-mahmud555/focus-pilot-pro-official), but no code or dependency was imported.

@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   if (location.protocol === 'chrome-extension:' || location.protocol === 'chrome:' || location.protocol === 'edge:') return;
 
   // Minimal error tracing for content script
@@ -31,11 +31,11 @@
 
   // Remote approach: separate style element (better for CSP/maintainability)
   const style = document.createElement('style');
-  style.textContent = `:host{all:initial}.chip{position:fixed;z-index:2147483646;top:16px;right:18px;display:flex;align-items:center;gap:10px;max-width:min(360px,calc(100vw - 32px));padding:9px 12px 9px 10px;border:1px solid rgba(74,104,71,.18);border-radius:16px;background:linear-gradient(120deg,rgba(250,249,242,.95),rgba(242,247,238,.92));box-shadow:0 6px 24px rgba(42,65,41,.1);backdrop-filter:blur(12px);font:13px/1.2 ui-sans-serif,system-ui,sans-serif;color:#29432d}.chip:before{content:"";position:absolute;right:8px;top:3px;width:20px;height:12px;border-radius:100% 0 100% 0;background:rgba(116,158,106,.08);transform:rotate(34deg);pointer-events:none}.chip[hidden],.modal-backdrop[hidden]{display:none}.chip-seed{position:relative;width:23px;height:23px;flex:none;border-radius:0;background:transparent}.chip-seed:before{content:"";position:absolute;left:3px;right:3px;bottom:3px;height:4px;border-radius:100%;background:#b9c9ac}.chip-growth-stem{position:absolute;left:10px;bottom:5px;width:3px;height:11px;border-radius:4px;background:#6c9868;transform:scaleY(.7);transform-origin:bottom}.chip-growth-leaf{position:absolute;width:7px;height:11px;border-radius:100% 0 100% 0;background:#6f9869;opacity:0;transform:scale(.25)}.chip-growth-leaf-left{left:4px;top:3px;transform:rotate(-35deg) scale(.25);transform-origin:bottom right}.chip-growth-leaf-right{right:3px;top:1px;transform:rotate(35deg) scale(.25);transform-origin:bottom left}.ff-growth-ritual .chip-growth-stem{animation:ff-grow-stem .42s cubic-bezier(.2,.8,.3,1) both}.ff-growth-ritual .chip-growth-leaf-left{animation:ff-grow-leaf-left .25s .28s ease-out both}.ff-growth-ritual .chip-growth-leaf-right{animation:ff-grow-leaf-right .25s .38s ease-out both}.ff-growth-flash .chip-seed{animation:ff-growth-flicker .16s steps(2,end) 6 both}.ff-growth-flash .chip-growth-leaf{opacity:.95}@keyframes ff-grow-stem{to{transform:scaleY(1)}}@keyframes ff-grow-leaf-left{to{opacity:.95;transform:rotate(-35deg) scale(1)}}@keyframes ff-grow-leaf-right{to{opacity:.95;transform:rotate(35deg) scale(1)}}@keyframes ff-growth-flicker{50%{opacity:.35;filter:brightness(1.2)}100%{opacity:1;filter:none}}.chip-copy{display:grid;gap:2px;min-width:0}.chip-kicker{color:#8a9a84;font-size:8px;font-weight:800;letter-spacing:.12em;line-height:1;text-transform:uppercase}.chip-copy strong{display:block;max-width:225px;overflow:hidden;color:#385b3c;font-size:12px;font-weight:750;line-height:1.15;text-overflow:ellipsis;white-space:nowrap}.chip-copy small{display:block;margin-top:0;color:#7f907b;font-size:11px;line-height:1.2}.chip-action{border:0;border-left:1px solid #e0e8dc;margin-left:3px;min-width:52px;padding:4px 0 4px 11px;background:none;color:#64805f;font:600 10px/1.2 ui-sans-serif,system-ui,sans-serif;cursor:pointer}.chip-action:hover,.chip-action:focus{text-decoration:underline;outline:none}.chip-action:focus-visible{outline:2px solid #577f58;outline-offset:3px;text-decoration:none}.ff-soft-drift{filter:saturate(.78)}#focus-forest-root{filter:none!important}.modal-backdrop{position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:radial-gradient(circle at 50% 35%,rgba(232,242,224,.32),rgba(38,55,38,.3));backdrop-filter:blur(3px);font-family:ui-sans-serif,system-ui,sans-serif}.choice-sheet{width:min(470px,calc(100vw - 34px));padding:31px 31px 27px;border:1px solid rgba(89,114,82,.16);border-radius:26px;background:#fbfaf4;color:#29432d;box-shadow:0 28px 90px rgba(28,47,29,.25)}.sheet-mark{height:27px;display:flex;align-items:end;gap:4px;margin-bottom:15px}.sheet-mark span{display:block;width:6px;border-radius:8px;background:#78a171}.sheet-mark span:nth-child(1){height:14px;transform:rotate(-22deg)}.sheet-mark span:nth-child(2){height:25px}.sheet-mark span:nth-child(3){height:18px;transform:rotate(22deg)}.sheet-eyebrow{margin:0 0 8px;text-transform:uppercase;letter-spacing:.16em;color:#7b9076;font-size:10px;font-weight:800}.choice-sheet h2{margin:0;font:500 28px/1.1 Georgia,serif;letter-spacing:-.025em;color:#29432d}.sheet-copy{margin:15px 0 23px;color:#697968;font-size:14px;line-height:1.58}.sheet-copy q{color:#486a4a;font-weight:650}.sheet-actions{display:grid;gap:8px}.choice{display:flex;align-items:center;gap:12px;width:100%;padding:12px 13px;border:1px solid #dce6d8;border-radius:13px;background:#f4f6ee;color:#3c5c3e;text-align:left;cursor:pointer}.choice:hover,.choice:focus{border-color:#9bb596;background:#eef4ea;outline:3px solid rgba(108,151,102,.16)}.choice.primary{border-color:#668c64;background:#577f58;color:white}.choice.primary:hover,.choice.primary:focus{background:#4c754f}.choice-icon{display:grid;place-items:center;width:28px;height:28px;border-radius:9px;background:rgba(255,255,255,.5);font-size:20px;font-weight:400}.choice.primary .choice-icon{background:rgba(255,255,255,.18)}.choice strong{display:block;font:700 13px ui-sans-serif,system-ui,sans-serif}.choice small{display:block;margin-top:3px;opacity:.76;font:11px ui-sans-serif,system-ui,sans-serif}.choice.primary small{opacity:.85}@media(max-width:600px){.chip{top:10px;right:10px;max-width:calc(100vw - 20px)}.chip-kicker{font-size:7px}.chip-copy strong{font-size:11px}.chip-copy small{font-size:10px}}@media(max-width:520px){.choice-sheet{padding:25px 20px 21px}.choice-sheet h2{font-size:24px}}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.ff-growth-ritual .chip-seed,.ff-growth-flash .chip-seed{filter:none!important}}`;
+  style.textContent = `:host{all:initial}.chip{position:fixed;z-index:2147483646;top:16px;right:18px;display:flex;align-items:center;gap:10px;max-width:min(360px,calc(100vw - 32px));padding:9px 12px 9px 10px;border:1px solid rgba(74,104,71,.18);border-radius:16px;background:linear-gradient(120deg,rgba(250,249,242,.95),rgba(242,247,238,.92));box-shadow:0 6px 24px rgba(42,65,41,.1);backdrop-filter:blur(12px);font:13px/1.2 ui-sans-serif,system-ui,sans-serif;color:#29432d}.chip:before{content:"";position:absolute;right:8px;top:3px;width:20px;height:12px;border-radius:100% 0 100% 0;background:rgba(116,158,106,.08);transform:rotate(34deg);pointer-events:none}.chip[hidden],.modal-backdrop[hidden]{display:none}.chip-seed{position:relative;width:23px;height:23px;flex:none;border-radius:0;background:transparent}.chip-seed:before{content:"";position:absolute;left:3px;right:3px;bottom:3px;height:4px;border-radius:100%;background:#b9c9ac}.chip-growth-stem{position:absolute;left:10px;bottom:5px;width:3px;height:11px;border-radius:4px;background:#6c9868;transform:scaleY(.7);transform-origin:bottom}.chip-growth-leaf{position:absolute;width:7px;height:11px;border-radius:100% 0 100% 0;background:#6f9869;opacity:0;transform:scale(.25)}.chip-growth-leaf-left{left:4px;top:3px;transform:rotate(-35deg) scale(.25);transform-origin:bottom right}.chip-growth-leaf-right{right:3px;top:1px;transform:rotate(35deg) scale(.25);transform-origin:bottom left}.ff-growth-ritual .chip-growth-stem{animation:ff-grow-stem .42s cubic-bezier(.2,.8,.3,1) both}.ff-growth-ritual .chip-growth-leaf-left{animation:ff-grow-leaf-left .25s .28s ease-out both}.ff-growth-ritual .chip-growth-leaf-right{animation:ff-grow-leaf-right .25s .38s ease-out both}.ff-growth-flash .chip-seed{animation:ff-growth-flicker .16s steps(2,end) 6 both}.ff-growth-flash .chip-growth-leaf{opacity:.95}@keyframes ff-grow-stem{to{transform:scaleY(1)}}@keyframes ff-grow-leaf-left{to{opacity:.95;transform:rotate(-35deg) scale(1)}}@keyframes ff-grow-leaf-right{to{opacity:.95;transform:rotate(35deg) scale(1)}}@keyframes ff-growth-flicker{0%,100%{opacity:1}50%{opacity:.4}}.chip-copy{display:flex;align-items:center;gap:10px;flex:1;min-width:0}.chip-kicker{font-size:10px;letter-spacing:.04em;text-transform:uppercase;color:#6c8c68;white-space:nowrap}.chip-action{appearance:none;border:1px solid rgba(74,104,71,.18);border-radius:10px;background:rgba(250,249,242,.9);color:#29432d;font:inherit;font-size:11px;padding:4px 10px;cursor:pointer;transition:background .15s,border-color .15s}.chip-action:hover{background:rgba(242,247,238,.95);border-color:rgba(74,104,71,.32)}.modal-backdrop{position:fixed;inset:0;background:rgba(42,65,41,.18);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:16px;z-index:2147483647}.choice-sheet{background:rgba(250,249,242,.97);border:1px solid rgba(74,104,71,.12);border-radius:20px;box-shadow:0 12px 40px rgba(42,65,41,.14);max-width:420px;width:100%;padding:22px 20px 18px;position:relative}.sheet-mark{display:flex;gap:6px;margin-bottom:12px}.sheet-mark span{width:8px;height:8px;border-radius:50%;background:#b9c9ac}.sheet-eyebrow{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#6c8c68;margin:0 0 6px}.choice-sheet h2{font:600 16px/1.3 ui-sans-serif,system-ui,sans-serif;color:#29432d;margin:0 0 10px}.sheet-copy{font:13px/1.5 ui-sans-serif,system-ui,sans-serif;color:#3d5239;margin:0 0 16px}.sheet-actions{display:flex;flex-direction:column;gap:8px}.choice{appearance:none;border:1px solid rgba(74,104,71,.14);border-radius:14px;background:rgba(255,255,255,.6);color:#29432d;font:inherit;text-align:left;padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .15s,border-color .15s}.choice:hover{background:rgba(242,247,238,.85);border-color:rgba(74,104,71,.28)}.choice.primary{background:rgba(250,249,242,.95);border-color:rgba(74,104,71,.22)}.choice-icon{font-size:16px;width:22px;text-align:center;flex:none}.choice span{display:block}.choice strong{font-weight:600;font-size:13px}.choice small{font-size:11px;color:#6c8c68;margin-top:1px}`;
   shadow.append(style);
 
   // Remote approach: HTML structure with centered modal choice sheet
-  shadow.innerHTML += `<div class="chip" role="group" aria-label="Focus Forest companion" hidden><span class="chip-seed" aria-hidden="true"><span class="chip-growth-stem"></span><span class="chip-growth-leaf chip-growth-leaf-left"></span><span class="chip-growth-leaf chip-growth-leaf-right"></span></span><span class="chip-copy"><span class="chip-kicker">current mission</span><strong class="mission"></strong><small class="state" aria-live="polite"></small></span><button class="chip-action" aria-label="Pause Focus Forest">Pause</button></div><div class="modal-backdrop" hidden><section class="choice-sheet" role="dialog" aria-modal="true" aria-labelledby="ff-title"><div class="sheet-mark" aria-hidden="true"><span></span><span></span><span></span></div><p class="sheet-eyebrow">A moment to choose</p><h2 id="ff-title">You may have wandered a little.</h2><p class="sheet-copy"></p><div class="sheet-actions"><button data-action="home" class="choice primary"><span class="choice-icon">↶</span><span><strong>Return to my mission</strong><small>Go back to where this session began.</small></span></button><button data-action="compost" class="choice"><span class="choice-icon">⌁</span><span><strong>Save this for later</strong><small>Put this curiosity in your compost pile.</small></span></button><button data-action="mission" class="choice"><span class="choice-icon">＋</span><span><strong>Start a new mission</strong><small>Let this become the thing you are here to do.</small></span></button></div></section></div>`;
+  shadow.insertAdjacentHTML('beforeend', `<div class="chip" role="group" aria-label="Focus Forest companion" hidden><span class="chip-seed" aria-hidden="true"><span class="chip-growth-stem"></span><span class="chip-growth-leaf chip-growth-leaf-left"></span><span class="chip-growth-leaf chip-growth-leaf-right"></span></span><span class="chip-copy"><span class="chip-kicker">current mission</span><strong class="mission"></strong><small class="state" aria-live="polite"></small></span><button class="chip-action" aria-label="Pause Focus Forest">Pause</button></div><div class="modal-backdrop" hidden><section class="choice-sheet" role="dialog" aria-modal="true" aria-labelledby="ff-title"><div class="sheet-mark" aria-hidden="true"><span></span><span></span><span></span></div><p class="sheet-eyebrow">A moment to choose</p><h2 id="ff-title">You may have wandered a little.</h2><p class="sheet-copy"></p><div class="sheet-actions"><button data-action="home" class="choice primary"><span class="choice-icon">↶</span><span><strong>Return to my mission</strong><small>Go back to where this session began.</small></span></button><button data-action="compost" class="choice"><span class="choice-icon">⌁</span><span><strong>Save this for later</strong><small>Put this curiosity in your compost pile.</small></span></button><button data-action="mission" class="choice"><span class="choice-icon">＋</span><span><strong>Start a new mission</strong><small>Let this become the thing you are here to do.</small></span></button></div></section></div>`);
 
   const chip = shadow.querySelector('.chip');
   const backdrop = shadow.querySelector('.modal-backdrop');
@@ -52,26 +52,26 @@
   function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 
   // Remote's escapeHtml for XSS protection (adopted)
-  function escapeHtml(value) { 
-    return String(value).replace(/[&<>'"]/g, (c) => ({ 
-      '&':'&', '<':'<', '>':'>', "'":''', '"':'"' }[c])); 
+  function escapeHtml(value) {
+    const ESC = { '&': '&', '<': '<', '>': '>', "'": "'", '"': '"' };
+    return String(value).replace(/[&<>'"]/g, (c) => ESC[c]);
   }
 
   async function loadSettings() {
     try {
       const snap = await send('GET_SNAPSHOT');
       growthAnimationTrigger = snap.settings?.growthAnimationTrigger || 'mission-origin';
-    } catch (error) { 
+    } catch (error) {
       logError(error, { category: ERROR_CATEGORIES.MESSAGING, function: 'loadSettings' });
-      growthAnimationTrigger = 'mission-origin'; 
+      growthAnimationTrigger = 'mission-origin';
     }
   }
 
   function cancelGrowthRitual() { ritualToken += 1; window.clearTimeout(ritualTimer); ritualTimer = 0; chip.classList.remove('ff-growth-ritual', 'ff-growth-flash'); }
   function waitForGrowth(ms, token) { return new Promise((resolve) => { ritualTimer = window.setTimeout(() => resolve(token === ritualToken), ms); }); }
-  
+
   const safeShowGrowthRitual = wrapWithErrorBoundary(showGrowthRitual, { category: ERROR_CATEGORIES.UI_RENDER, function: 'showGrowthRitual' });
-  
+
   // Local's showGrowthRitual with isOrigin parameter (kept)
   async function showGrowthRitual(isOrigin = false) {
     const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -91,13 +91,13 @@
     chip.classList.add('ff-growth-flash');
     if (!await waitForGrowth(1000, token)) return false;
     chip.classList.remove('ff-growth-flash');
-    if (isOrigin) { 
-      originRitualPlayed = true; 
-      try { sessionStorage.setItem('ff-origin-ritual-played', 'true'); } catch { /* storage may be unavailable */ } 
+    if (isOrigin) {
+      originRitualPlayed = true;
+      try { sessionStorage.setItem('ff-origin-ritual-played', 'true'); } catch { /* storage may be unavailable */ }
     }
     return true;
   }
-  
+
   const safeUpdate = wrapWithErrorBoundary(update, { category: ERROR_CATEGORIES.UI_RENDER, function: 'update' });
   async function update(view) {
     const previous = current;
@@ -105,14 +105,14 @@
     if (!current?.node) { cancelGrowthRitual(); chip.hidden = true; backdrop.hidden = true; document.documentElement.classList.remove('ff-soft-drift'); return; }
     const previousSessionId = previous?.id || null;
     const currentSessionId = current.id || null;
-    if (previousSessionId && currentSessionId && previousSessionId !== currentSessionId) { 
-      originRitualPlayed = false; 
-      try { sessionStorage.removeItem('ff-origin-ritual-played'); } catch { /* storage may be unavailable */ } 
+    if (previousSessionId && currentSessionId && previousSessionId !== currentSessionId) {
+      originRitualPlayed = false;
+      try { sessionStorage.removeItem('ff-origin-ritual-played'); } catch { /* storage may be unavailable */ }
     }
     const depth = current.node.depth || 0;
     const paused = current.interventionPaused;
     const thresholds = view?.thresholds || { DESATURATE: 4, INTERRUPT: 5 };
-    const stateKind = paused ? 'resting' : depth >= thresholds.INTERRUPT ? 'interrupt' : depth >= thresholds.DESATURATE ? 'drift' : depth > 0 ? 'branch' : 'root'; 
+    const stateKind = paused ? 'resting' : depth >= thresholds.INTERRUPT ? 'interrupt' : depth >= thresholds.DESATURATE ? 'drift' : depth > 0 ? 'branch' : 'root';
     const state = paused ? 'Forest resting' : depth >= thresholds.INTERRUPT ? 'You may be wandering' : depth >= thresholds.DESATURATE ? 'This branch is getting long' : depth > 0 ? `Related branch · ${depth} ${depth === 1 ? 'step' : 'steps'} away` : 'Growing from this mission';
     const enteredNewBranch = !paused && previous?.node?.id && previous.node.id !== current.node.id && depth > (previous.node.depth || 0);
     const isOriginLoad = !paused && !previous?.node?.id && depth === 0;
@@ -134,7 +134,22 @@
   // Remote's showChoiceSheet with escapeHtml (adopted)
   function showChoiceSheet(depth) {
     backdrop.dataset.shownFor = location.href;
-    sheetCopy.innerHTML = `You started with <q>${escapeHtml(current?.mission || '')}</q>. You are now <strong>${depth} branches away</strong>, looking at <q>${escapeHtml(document.title || location.hostname)}</q>. That may be exactly where you meant to go — or it may be a path that opened by itself.`;
+    sheetCopy.replaceChildren();
+    const missionEl = document.createElement('q');
+    missionEl.textContent = current?.mission || '';
+    const depthEl = document.createElement('strong');
+    depthEl.textContent = String(depth);
+    const pageEl = document.createElement('q');
+    pageEl.textContent = document.title || location.hostname;
+    sheetCopy.append(
+      document.createTextNode('You started with '),
+      missionEl,
+      document.createTextNode('. You are now '),
+      depthEl,
+      document.createTextNode(' branches away, looking at '),
+      pageEl,
+      document.createTextNode('. That may be exactly where you meant to go — or it may be a path that opened by itself.')
+    );
     backdrop.hidden = false;
     shadow.querySelector('[data-action="home"]').focus();
   }
@@ -192,10 +207,10 @@
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
   window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow' }), { passive: true });
   document.addEventListener('visibilitychange', wrapWithErrorBoundary(() => { if (document.hidden) window.clearTimeout(watchTimer); else { safeRefresh(false); scheduleWatch(); } }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'visibilitychange' }));
-  
+
   const safeLoadSettings = wrapWithErrorBoundary(loadSettings, { category: ERROR_CATEGORIES.MESSAGING, function: 'loadSettings' });
   const safeScheduleWatch = wrapWithErrorBoundary(scheduleWatch, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'scheduleWatch' });
-  
+
   safeLoadSettings();
   safeRefresh(true);
   safeScheduleWatch();

@@ -1,4 +1,4 @@
-# Security Considerations
+﻿# Security Considerations
 
 ## Host Permissions
 
@@ -16,15 +16,19 @@ The service worker sanitizes all error responses returned to content scripts. In
 
 ## Message Validation
 
-All runtime messages are validated against explicit per-type schemas before processing. Malformed or unexpected messages are rejected without side effects.
+All runtime messages are validated against explicit per-type schemas before processing. Sender identity is checked against `chrome.runtime.id` to reject external messages. Malformed or unexpected messages are rejected without side effects.
+
+## State Caching
+
+The service worker caches the normalized state in memory between mutations to reduce `chrome.storage.local` round-trips. The cache is invalidated on mutation failures to prevent unpersisted changes from leaking into subsequent reads.
 
 ## State Canonicalization
 
-Node tab associations are stored as `tabIds` arrays only. Legacy `tabId` fields are migrated to `tabIds` during state normalization. `findNode` and related helpers always search the canonical `tabIds` array.
+Node tab associations are stored as `tabIds` arrays only. Legacy `tabId` fields are migrated to `tabIds` during state normalization. Node lookups always search the canonical `tabIds` array.
 
 ## Content Script Isolation
 
-The companion chip renders inside a closed shadow root. Its styles are scoped to the shadow boundary and never leak into the host page. No external stylesheet or web-accessible resource is used for the companion.
+The companion chip renders inside a closed shadow root. Its styles are scoped to the shadow boundary and never leak into the host page. No external stylesheet or web-accessible resource is used for the companion. Dynamic content in the choice sheet uses DOM-safe construction instead of `innerHTML`.
 
 ## Data Storage
 

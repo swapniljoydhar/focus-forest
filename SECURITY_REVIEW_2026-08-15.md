@@ -93,3 +93,21 @@ The stress harness issued 500 concurrent observations, 300 concurrent settings u
 ## Explicit exclusions
 
 This pass did not add frameworks, third-party sanitizers, remote services, AI, telemetry, history/top-sites permissions, or broad architectural rewrites. It does not claim Chrome-process security certification or prove behavior that requires a real Chrome profile until that manual matrix is run.
+
+## Phase 3 fixes applied after initial audit
+
+The following issues identified in the initial security and performance review were fixed in a subsequent remediation pass:
+
+- **Critical syntax error** in content/content.js (escapeHtml object literal) — the content script was completely broken due to ''' instead of ''. Fixed by correcting the single-quote mapping value.
+- **Medium async mutation bug** in ackground/service-worker.js (onHistoryStateUpdated listener) — 	rackLink was not awaited inside the chrome.tabs.get callback, risking lost mutations on MV3 service worker termination. Fixed by switching to promise-based chrome.tabs.get and awaiting 	rackLink.
+- **Medium performance issue** — shadow.innerHTML +=  in content/content.js caused full shadow DOM re-parse. Fixed by switching to insertAdjacentHTML('beforeend', ...).
+- **Medium performance issue** — sheetCopy.innerHTML in content/content.js for dynamic choice-sheet content. Fixed by replacing with DOM-safe eplaceChildren() and ppend() using text nodes and elements.
+- **Medium storage round-trip performance** — Every loadState() call re-read from chrome.storage.local and re-normalized the full state. Fixed by adding an in-memory state cache in shared/state.js with clearStateCache() on mutation failures.
+- **Low unused import** — Removed unused canonicalUrl import from ackground/service-worker.js.
+- **Low dead export** — Removed unused indNode export from shared/state.js.
+- **Low unused import** — Removed unused logCritical import from ackground/service-worker.js.
+- **Low security hardening** — Added sender identity validation (sender.id === chrome.runtime.id) in the message listener.
+- **Cleanup** — Deleted obsolete test harnesses, test fixtures, and internal audit artifacts that were not part of the extension.
+
+All modified files pass 
+ode --check syntax validation. No innerHTML, document.write, or eval patterns remain in source files. All imports point to existing modules, and all chrome.* API calls use MV3-compatible signatures.
