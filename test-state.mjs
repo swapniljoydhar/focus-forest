@@ -1,7 +1,7 @@
 ﻿import { describe, it } from 'node:test';
 import assert from 'node:assert';
 
-const { isSearchUrl, safeHttpUrl, normalizeSettings, compactText, getDepthState, LIMITS, DEFAULT_SETTINGS } = await import('./shared/state.js');
+const { isSearchUrl, safeHttpUrl, normalizeSettings, compactText, getDepthState, LIMITS, DEFAULT_SETTINGS, normalizeState, emptyState } = await import('./shared/state.js');
 
 describe('shared/state.js core functions', () => {
   it('compactText trims and truncates', () => {
@@ -38,5 +38,86 @@ describe('shared/state.js core functions', () => {
     assert.strictEqual(getDepthState(4, false, { gentleDepth: 4, choiceDepth: 5 }), 'desaturated');
     assert.strictEqual(getDepthState(5, false, { gentleDepth: 4, choiceDepth: 5 }), 'interrupted');
     assert.strictEqual(getDepthState(3, true, { gentleDepth: 4, choiceDepth: 5 }), 'paused');
+  });
+});
+
+describe('security invariants', () => {
+  it('safeHttpUrl rejects dangerous schemes', () => {
+    assert.strictEqual(safeHttpUrl('javascript:alert(1)'), null);
+    assert.strictEqual(safeHttpUrl('data:text/html,<script>alert(1)</script>'), null);
+    assert.strictEqual(safeHttpUrl('file:///etc/passwd'), null);
+    assert.strictEqual(safeHttpUrl('vbscript:msgbox(1)'), null);
+    assert.strictEqual(safeHttpUrl('about:blank'), null);
+  });
+
+  it('safeHttpUrl strips tracking parameters and hashes', () => {
+    const u = safeHttpUrl('https://example.com/path?utm_source=x&id=1#frag');
+    assert.ok(u);
+    assert.ok(!u.includes('utm_source'));
+    assert.ok(u.includes('id=1'));
+    assert.ok(!u.includes('#frag'));
+  });
+
+  it('compactText never throws on weird input', () => {
+    assert.strictEqual(compactText(null), '');
+    assert.strictEqual(compactText(undefined), '');
+    assert.strictEqual(compactText(123), '123');
+    assert.strictEqual(compactText('a\nb\tc'), 'a b c');
+  });
+});
+
+describe('normalizeState migration and bounds', () => {
+  it('migrates legacy tabId to tabIds and drops the tabId field', () => {
+    const legacy = {
+      sessions: [{
+        id: 's1', mission: 'm', status: 'active', startedAt: 1,
+        origin: { tabId: 5, url: 'https://example.com', title: 'Ex' },
+        nodes: [{ id: 'n1', tabId: 7, url: 'https://example.com/page', title: 'Pg', parentId: null, depth: 0, state: 'normal' }],
+        events: []
+      }],
+      activeSessionId: 's1'
+    };
+    const result = normalizeState(legacy);
+    assert.strictEqual(result.schemaVersion, 2);
+    const node = result.sessions[0].nodes[0];
+    assert.deepStrictEqual(node.tabIds, [7]);
+    assert.ok(!('tabId' in node), 'legacy tabId should not survive normalization');
+  });
+
+  it('rejects javascript: URLs during normalization', () => {
+    const poisoned = {
+      sessions: [{
+        id: 's1', mission: 'm', status: 'active', startedAt: 1,
+        origin: { url: 'javascript:alert(1)' },
+        nodes: [{ id: 'n1', url: 'javascript:alert(1)', title: 'x', parentId: null, depth: 0, state: 'normal' }],
+        events: []
+      }],
+      compostItems: [{ id: 'c1', url: 'javascript:alert(1)', title: 'x', mission: 'm', depth: 1, savedAt: 1 }]
+    };
+    const result = normalizeState(poisoned);
+    // sessions with no valid origin url get the chrome://newtab fallback
+    assert.strictEqual(result.sessions[0].origin.url, 'chrome://newtab');
+    // a node whose url is javascript: is dropped entirely (compactNode returns null)
+    assert.strictEqual(result.sessions[0].nodes.length, 0);
+    // compost items with javascript: urls are filtered out
+    assert.strictEqual(result.compostItems.length, 0);
+  });
+
+  it('caps sessions, nodes, events, and compost to LIMITS', () => {
+    const big = { ...emptyState() };
+    big.sessions = Array.from({ length: LIMITS.SESSIONS + 5 }, (_, i) => ({
+      id: `s${i}`, mission: 'm', status: 'completed', startedAt: i, endedAt: i + 1,
+      origin: { url: 'https://example.com' },
+      nodes: Array.from({ length: LIMITS.NODES_PER_SESSION + 5 }, (_, j) => ({ id: `n${i}_${j}`, url: `https://example.com/${j}`, title: 't', parentId: null, depth: 0, state: 'normal' })),
+      events: Array.from({ length: LIMITS.EVENTS_PER_SESSION + 5 }, (_, k) => ({ id: `e${k}`, type: 'navigation', at: k }))
+    }));
+    big.compostItems = Array.from({ length: LIMITS.COMPOST + 5 }, (_, i) => ({ id: `c${i}`, url: `https://example.com/c${i}`, title: 't', mission: 'm', depth: 1, savedAt: i }));
+    const result = normalizeState(big);
+    assert.ok(result.sessions.length <= LIMITS.SESSIONS, `sessions ${result.sessions.length}`);
+    for (const sess of result.sessions) {
+      assert.ok(sess.nodes.length <= LIMITS.NODES_PER_SESSION, `nodes ${sess.nodes.length}`);
+      assert.ok(sess.events.length <= LIMITS.EVENTS_PER_SESSION, `events ${sess.events.length}`);
+    }
+    assert.ok(result.compostItems.length <= LIMITS.COMPOST, `compost ${result.compostItems.length}`);
   });
 });

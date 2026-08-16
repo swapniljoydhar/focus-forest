@@ -101,7 +101,8 @@ The following issues identified in the initial security and performance review w
 - **Critical syntax error** in content/content.js (escapeHtml object literal) — the content script was completely broken due to ''' instead of ''. Fixed by correcting the single-quote mapping value.
 - **Medium async mutation bug** in ackground/service-worker.js (onHistoryStateUpdated listener) — 	rackLink was not awaited inside the chrome.tabs.get callback, risking lost mutations on MV3 service worker termination. Fixed by switching to promise-based chrome.tabs.get and awaiting 	rackLink.
 - **Medium performance issue** — shadow.innerHTML +=  in content/content.js caused full shadow DOM re-parse. Fixed by switching to insertAdjacentHTML('beforeend', ...).
-- **Medium performance issue** — sheetCopy.innerHTML in content/content.js for dynamic choice-sheet content. Fixed by replacing with DOM-safe eplaceChildren() and ppend() using text nodes and elements.
+- **Medium performance issue** — sheetCopy.innerHTML in content/content.js for dynamic choice-sheet content. Fixed by replacing with DOM-safe 
+eplaceChildren() and ppend() using text nodes and elements.
 - **Medium storage round-trip performance** — Every loadState() call re-read from chrome.storage.local and re-normalized the full state. Fixed by adding an in-memory state cache in shared/state.js with clearStateCache() on mutation failures.
 - **Low unused import** — Removed unused canonicalUrl import from ackground/service-worker.js.
 - **Low dead export** — Removed unused indNode export from shared/state.js.
@@ -111,3 +112,81 @@ The following issues identified in the initial security and performance review w
 
 All modified files pass 
 ode --check syntax validation. No innerHTML, document.write, or eval patterns remain in source files. All imports point to existing modules, and all chrome.* API calls use MV3-compatible signatures.
+
+## Phase 4 fixes (follow-up remediation pass)
+
+A follow-up pass re-verified the earlier claims and corrected several that were
+overstated or incomplete. Each was confirmed with a failing fixture or a
+demonstration before the fix.
+
+- **High security — `escapeHtml` was a no-op (content/content.js).** The Phase 3
+  note claimed the function had been fixed, but the entity map still mapped every
+  character to itself (`<` -> `<`), so it provided zero XSS protection. The
+  function was dead code (callers use `textContent`/`replaceChildren`, which are
+  safe), but adopting it into an `innerHTML` sink would have been a live DOM-XSS
+  vector. Corrected the map to real entities (`&amp;`, `&lt;`, `&gt;`, `&#39;`,
+  `&quot;`).
+- **High correctness — synchronous `new URL()` throw on malformed messages
+  (background/service-worker.js).** `LINK_CLICK`, `OBSERVE_PAGE`, and the
+  `webNavigation` listener parsed `message.url` / `details.url` with `new URL()`
+  before the async error boundary was attached. `validateMessage()` only checked
+  key presence, so a malformed-but-truthy URL threw synchronously and left
+  `sendResponse` uncalled. Added `hostnameOf()` (try/catch-wrapped), `isSpaDomain()`,
+  and `recentlyObservedSpa()` helpers; all three throw sites now use the safe
+  helpers, and `LINK_CLICK` validates the URL with `safeHttpUrl()` before dispatch.
+- **Medium security — `validateMessage` was presence-only (F-06/F-07 root cause).**
+  Replaced the array-of-keys schema with a per-field type schema
+  (string/boolean/object, optional `?` suffix) and explicit type checks. This is
+  the root-cause fix for the malformed-URL throw class and rejects mistyped
+  payloads (`paused: 'yes'`, `url: 123`) deterministically at the message boundary.
+- **Medium security — `START_MISSION` trusted `message.tab` (F-07).** Added
+  `sanitizeTab()` which coerces the sender/client tab descriptor into a minimal
+  safe shape (integer ids, string url/title) and prefers the validated Chrome
+  `sender.tab` over the client fallback.
+- **Medium correctness — pruned nodes kept tab aliases (F-08).** `pruneNode` set
+  `node.state = 'pruned'` but left `tabIds` attached; `nodeForTab` filtered only
+  by `!node.closedAt`, so a pruned (non-closed) node could still win tab lookups
+  by ordering luck. `nodeForTab` now excludes terminal states
+  (`pruned`/`composted`), and `pruneNode` now detaches live aliases.
+- **Medium correctness — `GO_HOME` placeholder origin (F-05).** When a mission was
+  planted from the New Tab page and no real HTTP(S) origin was recorded,
+  `origin.url` stayed `chrome://newtab`. GO_HOME would attempt to navigate a live
+  tab to the placeholder (Chrome disallows this) and fall through to opening a new
+  tab to the placeholder. Added `hasRealOrigin` so GO_HOME only navigates when a
+  genuine HTTP(S) origin exists.
+- **Low robustness — stale state cache (shared/state.js).** `stateCache` was only
+  cleared on mutation failure. Registered a `chrome.storage.onChanged` listener
+  that invalidates the cache for our key on external writes (self-writes made
+  through `saveState()` are excluded via an in-flight flag so the cache stays
+  effective within the mutation queue).
+- **Low privacy — hardcoded Google redirect (newtab/app.js).** "Browse without a
+  mission" redirected to `https://www.google.com`, contradicting the local-first
+  posture. Replaced with a calm local status message; the user navigates
+  themselves.
+- **Hygiene — explicit extension-page CSP (manifest.json).** Added
+  `content_security_policy.extension_pages` pinning `script-src 'self'` (MV3
+  already enforces this by default; this makes the intent explicit and forbids
+  `unsafe-eval`/remote scripts).
+- **Hygiene — tests.** Expanded `test-state.mjs` from 5 to 11 tests, adding
+  security-invariant cases (dangerous URL schemes rejected, tracking params
+  stripped, `compactText` robustness) and `normalizeState` migration/bounds cases
+  (legacy `tabId` migration, `javascript:` URL rejection during normalization, and
+  LIMITS enforcement on sessions/nodes/events/compost).
+
+### Residual items still open
+
+- **F-01** (broad host permissions) — intentional product boundary; unchanged.
+- **F-04** (redirect-chain matrix across SPA navigations and same-tab reloads) —
+  still needs real Chrome verification.
+- **F-09** (snapshot access limited to extension contexts) — no external
+  messaging entry point exists; additional sender-context checks would be
+  defense-in-depth only.
+- **F-10** (dashboard DOM construction vs escaping) — dashboard already uses
+  `textContent`/DOM construction for data-bearing fields; no `innerHTML` sinks
+  remain in source. A full Trusted Types policy would be a larger architectural
+  change with no demonstrated exploit.
+- **F-12** (extension-page initial-render error fallback) — covered by the
+  existing `renderSafely`/`initSafely` wrappers; remaining UX hardening only.
+- **F-13** (`canonicalUrl` raw-string fallback) — privileged navigation paths use
+  `safeHttpUrl()`; a future API split would improve naming only.
+
