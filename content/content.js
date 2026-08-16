@@ -51,10 +51,9 @@
 
   function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 
-  // Remote's escapeHtml for XSS protection (adopted)
   function escapeHtml(value) {
-    const ESC = { '&': '&', '<': '<', '>': '>', "'": "'", '"': '"' };
-    return String(value).replace(/[&<>'"]/g, (c) => ESC[c]);
+    const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' };
+    return String(value).replace(/[&<>"']/g, (c) => ESC[c]);
   }
 
   async function loadSettings() {
