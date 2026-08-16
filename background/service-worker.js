@@ -6,6 +6,13 @@ const MAX_PENDING_BRANCHES = 64;
 const SPA_DOMAINS = new Set(['youtube.com', 'notion.so', 'gmail.com', 'github.com', 'app.notion.so', 'docs.google.com', 'drive.google.com', 'calendar.google.com', 'mail.google.com']);
 const spaDedup = new Map();
 
+// Safe hostname extraction: never throws on malformed URLs.
+function hostnameOf(value) { try { return new URL(String(value || '')).hostname.toLowerCase(); } catch { return ''; } }
+// True when a hostname belongs to a known SPA domain or one of its subdomains.
+function isSpaDomain(hostname) { if (!hostname) return false; if (SPA_DOMAINS.has(hostname)) return true; for (const d of SPA_DOMAINS) if (hostname.endsWith(`.${d}`)) return true; return false; }
+// 1s dedup window for repeated SPA navigations on the same tab+url.
+function recentlyObservedSpa(tabId, url) { const key = `${tabId}::${url}`; if (spaDedup.has(key) && Date.now() - spaDedup.get(key) < 1000) return true; spaDedup.set(key, Date.now()); setTimeout(() => spaDedup.delete(key), 1500); return false; }
+
 function prunePendingBranches() { const now = Date.now(); for (const [key, entry] of pendingBranches) if (now - entry.createdAt >= 15000) pendingBranches.delete(key); while (pendingBranches.size > MAX_PENDING_BRANCHES) pendingBranches.delete(pendingBranches.keys().next().value); }
 function pendingBranchKey(url, sourceTabId, windowId) { return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${Number.isInteger(windowId) ? windowId : 'nowin'}::${url}`; }
 function setPendingBranch(url, sourceTabId, windowId, parentId) { prunePendingBranches(); const key = pendingBranchKey(url, sourceTabId, windowId); pendingBranches.set(key, { url, sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null, windowId: Number.isInteger(windowId) ? windowId : null, parentId, createdAt: Date.now() }); }
@@ -39,7 +46,8 @@ function replaceState(nextState) {
 }
 
 function nodeHasTab(node, tabId) { return Number.isInteger(tabId) && (node.tabIds?.includes(tabId) || node.tabId === tabId); }
-function nodeForTab(session, tabId) { return [...session.nodes].reverse().find((node) => nodeHasTab(node, tabId) && !node.closedAt) || null; }
+const TERMINAL_STATES = new Set(['pruned', 'composted']);
+function nodeForTab(session, tabId) { return [...session.nodes].reverse().find((node) => nodeHasTab(node, tabId) && !node.closedAt && !TERMINAL_STATES.has(node.state)) || null; }
 function attachTab(node, tabId) { if (!Number.isInteger(tabId)) return false; node.tabIds ||= []; if (node.tabIds.includes(tabId)) return false; node.tabIds.push(tabId); return true; }
 function detachTab(node, tabId) { if (!Array.isArray(node.tabIds)) return false; const before = node.tabIds.length; node.tabIds = node.tabIds.filter((id) => id !== tabId); return before !== node.tabIds.length; }
 function moveTabToNode(session, tabId, targetId) { session.nodes.forEach((node) => { if (node.id !== targetId) detachTab(node, tabId); }); }
@@ -62,6 +70,21 @@ function safeReason(value) { return ['user_ended', 'mission_changed', 'browse_wi
 function safeOriginUrl(value) { const raw = String(value || ''); return safeHttpUrl(raw) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) ? raw.slice(0, LIMITS.URL) : 'chrome://newtab'); }
 function safeNavigationUrl(value) { const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http; if (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) || raw === 'chrome://newtab') return raw.slice(0, LIMITS.URL); return null; }
 function sameOriginUrl(actual, expected) { const expectedHttp = safeHttpUrl(expected); return expectedHttp ? safeHttpUrl(actual) === expectedHttp : String(actual || '') === String(expected || ''); }
+
+# Coerce a sender or client-supplied tab descriptor into a minimal safe shape.
+# Only numeric ids and sanitized url/title fields are preserved; the genuine
+# chrome sender.tab is preferred when present so extension pages cannot spoof
+# tab identity beyond what createSession already sanitizes.
+function sanitizeTab(tab) {
+  if (!tab || typeof tab !== 'object') return null;
+  return {
+    id: Number.isInteger(tab.id) ? tab.id : null,
+    windowId: Number.isInteger(tab.windowId) ? tab.windowId : null,
+    url: typeof tab.url === 'string' ? tab.url : null,
+    title: typeof tab.title === 'string' ? tab.title : null,
+    openerTabId: Number.isInteger(tab.openerTabId) ? tab.openerTabId : null
+  };
+}
 
 function addEvent(session, type, payload = {}) {
   session.events.push({ id: makeId('event'), type, at: Date.now(), ...payload });
@@ -196,7 +219,7 @@ async function pruneNode(sessionId, nodeId, toCompost = false) {
     if (!session) return NO_CHANGE;
     const node = session.nodes.find((item) => item.id === nodeId && !item.closedAt);
     if (!node || node.depth === 0 || node.state === 'pruned') return NO_CHANGE;
-    node.state = 'pruned'; node.prunedAt = Date.now();
+    node.state = 'pruned'; node.prunedAt = Date.now(); node.tabIds = []; delete node.tabId;
     addEvent(session, 'pruned', { nodeId: node.id, depth: node.depth });
     if (toCompost && !state.compostItems.some((item) => item.url === node.url)) {
       state.compostItems.unshift({ id: makeId('compost'), url: node.url, title: compactText(node.title || node.url), mission: session.mission, depth: node.depth, savedAt: Date.now() });
@@ -229,9 +252,8 @@ async function getSnapshot(sessionId = null, includeHistory = false) {
 
 chrome.runtime.onInstalled.addListener(() => {
   wrapWithErrorBoundary(async () => {
-    chrome.storage.local.get(STORAGE_KEY).then((result) => { 
-      if (!result[STORAGE_KEY]) chrome.storage.local.set({ [STORAGE_KEY]: emptyState() }); 
-    });
+    const result = await chrome.storage.local.get(STORAGE_KEY);
+    if (!result[STORAGE_KEY]) await saveState(emptyState());
   }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled' })();
 });
 
@@ -244,27 +266,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     switch (message.type) {
       case 'GET_SNAPSHOT': return getSnapshot(safeId(message.sessionId) || null, Boolean(message.includeHistory));
       case 'GET_ACTIVE_VIEW': return activeView(await loadState(), tab?.id);
-      case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, message.tab || tab) : null;
+      case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, sanitizeTab(tab) || sanitizeTab(message.tab)) : null;
       case 'END_MISSION': return endSession(safeReason(message.reason));
       case 'LINK_CLICK': {
-        const domain = message.url ? new URL(message.url).hostname.toLowerCase() : '';
-        const isSpa = SPA_DOMAINS.has(domain) || [...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`));
-        if (isSpa && Number.isInteger(tab?.id)) {
-          const dedupKey = `${tab.id}::${message.url}`;
-          if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return null;
-          spaDedup.set(dedupKey, Date.now());
-          setTimeout(() => spaDedup.delete(dedupKey), 1500);
-        }
-        return Number.isInteger(tab?.id) ? trackLink({ tabId: tab.id, url: message.url, title: message.title, targetBlank: Boolean(message.targetBlank), windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null }) : null;
+        if (!Number.isInteger(tab?.id)) return null;
+        const linkUrl = safeHttpUrl(message.url);
+        if (!linkUrl) return null;
+        if (isSpaDomain(hostnameOf(linkUrl))) recentlyObservedSpa(tab.id, linkUrl);
+        return trackLink({ tabId: tab.id, url: linkUrl, title: typeof message.title === 'string' ? message.title : '', targetBlank: Boolean(message.targetBlank), windowId: Number.isInteger(tab?.windowId) ? tab.windowId : null });
       }
       case 'OBSERVE_PAGE': {
-        const domain = message.url ? new URL(message.url).hostname.toLowerCase() : '';
-        const isSpa = SPA_DOMAINS.has(domain) || [...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`));
-        if (isSpa && Number.isInteger(tab?.id)) {
-          const dedupKey = `${tab.id}::${message.url}`;
-          if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return null;
-        }
-        return Number.isInteger(tab?.id) ? observeTab(tab.id, message.url, message.title, tab.openerTabId, tab.windowId) : null;
+        if (!Number.isInteger(tab?.id)) return null;
+        if (isSpaDomain(hostnameOf(message.url)) && recentlyObservedSpa(tab.id, safeHttpUrl(message.url) || message.url)) return null;
+        return observeTab(tab.id, message.url, typeof message.title === 'string' ? message.title : '', tab.openerTabId, tab.windowId);
       }
       case 'COMPOST': return Number.isInteger(tab?.id) ? compost(tab.id, message.url, message.title) : null;
       case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }) : null;
@@ -275,14 +289,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'CLEAR_DATA': return replaceState(emptyState());
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
+        // Never navigate a live tab to the chrome://newtab placeholder; if no real
+        // HTTP(S) origin was ever recorded, open a fresh new-tab experience instead.
+        const hasRealOrigin = Boolean(returnUrl) && !/^chrome:\/\/newtab(?:\/|$)/i.test(returnUrl);
         let returnedToOrigin = false;
-        if (originTabId && returnUrl) {
+        if (originTabId && hasRealOrigin) {
           try {
             const liveTab = await chrome.tabs.get(originTabId);
             if (sameOriginUrl(liveTab?.url, origin.url)) { if (chrome.windows?.update && Number.isInteger(liveTab.windowId)) await chrome.windows.update(liveTab.windowId, { focused: true }); await chrome.tabs.update(originTabId, { url: returnUrl, active: true }); returnedToOrigin = true; }
           } catch { returnedToOrigin = false; }
         }
-        if (!returnedToOrigin && returnUrl) await chrome.tabs.create({ url: returnUrl, active: true });
+        if (!returnedToOrigin && hasRealOrigin) await chrome.tabs.create({ url: returnUrl, active: true });
         return activeView(await loadState(), returnedToOrigin ? originTabId : null);
       }
       default: return null;
@@ -296,24 +313,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true;
 });
 
+const SCHEMAS = {
+  GET_SNAPSHOT: {},
+  GET_ACTIVE_VIEW: {},
+  START_MISSION: { mission: 'string' },
+  END_MISSION: {},
+  LINK_CLICK: { url: 'string', title: 'string?', targetBlank: 'boolean?' },
+  OBSERVE_PAGE: { url: 'string', title: 'string?' },
+  COMPOST: { url: 'string', title: 'string?' },
+  PAUSE_INTERVENTION: { paused: 'boolean' },
+  UPDATE_SETTINGS: { settings: 'object' },
+  DELETE_COMPOST: { id: 'string' },
+  PRUNE_NODE: { sessionId: 'string', nodeId: 'string', toCompost: 'boolean?' },
+  DELETE_SESSION: { sessionId: 'string' },
+  CLEAR_DATA: {},
+  GO_HOME: {}
+};
+const TYPE_CHECKS = {
+  string: (v) => typeof v === 'string',
+  boolean: (v) => typeof v === 'boolean',
+  object: (v) => v && typeof v === 'object' && !Array.isArray(v)
+};
 function validateMessage(message) {
   if (!isRecord(message)) return false;
-  const required = { GET_SNAPSHOT: [], GET_ACTIVE_VIEW: [], START_MISSION: ['mission'], END_MISSION: [], LINK_CLICK: ['url'], OBSERVE_PAGE: ['url'], COMPOST: ['url'], PAUSE_INTERVENTION: ['paused'], UPDATE_SETTINGS: ['settings'], DELETE_COMPOST: ['id'], PRUNE_NODE: ['sessionId', 'nodeId'], DELETE_SESSION: ['sessionId'], CLEAR_DATA: [], GO_HOME: [] };
-  const schema = required[message.type];
+  const schema = SCHEMAS[message.type];
   if (!schema) return false;
-  for (const key of schema) { if (!(key in message)) return false; }
+  for (const [key, kind] of Object.entries(schema)) {
+    const optional = kind.endsWith('?');
+    const base = optional ? kind.slice(0, -1) : kind;
+    if (!(key in message)) return optional;
+    if (message[key] == null) return optional;
+    if (!TYPE_CHECKS[base](message[key])) return false;
+  }
   return true;
 }
 
 chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
   return wrapWithErrorBoundary(async (details) => {
     if (details.frameId !== 0 || details.tabId == null || !details.url) return;
-    const domain = new URL(details.url).hostname.toLowerCase();
-    if (!SPA_DOMAINS.has(domain) && ![...SPA_DOMAINS].some((d) => domain.endsWith(`.${d}`))) return;
-    const dedupKey = `${details.tabId}::${details.url}`;
-    if (spaDedup.has(dedupKey) && Date.now() - spaDedup.get(dedupKey) < 1000) return;
-    spaDedup.set(dedupKey, Date.now());
-    setTimeout(() => spaDedup.delete(dedupKey), 1500);
+    if (!isSpaDomain(hostnameOf(details.url))) return;
+    if (recentlyObservedSpa(details.tabId, details.url)) return;
     const tab = await chrome.tabs.get(details.tabId);
     if (!tab?.url) return;
     await trackLink({ tabId: tab.id, url: tab.url, title: tab.title, targetBlank: false, windowId: Number.isInteger(tab.windowId) ? tab.windowId : null });
