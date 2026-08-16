@@ -35,7 +35,7 @@ form.addEventListener('submit', wrapWithErrorBoundary(async (event) => {
 }, { category: ERROR_CATEGORIES.MESSAGING, function: 'form.submit' }));
 
 resume.addEventListener('click', wrapWithErrorBoundary(async () => { await message('GO_HOME'); status.textContent = 'Your current garden is ready in its origin tab.'; }, { category: ERROR_CATEGORIES.MESSAGING, function: 'resume.click' }));
-browse.addEventListener('click', wrapWithErrorBoundary(async () => { await message('END_MISSION', { reason: 'browse_without_mission' }); window.location.href = 'https://www.google.com'; }, { category: ERROR_CATEGORIES.MESSAGING, function: 'browse.click' }));
+browse.addEventListener('click', wrapWithErrorBoundary(async () => { await message('END_MISSION', { reason: 'browse_without_mission' }); resume.hidden = true; status.textContent = 'No mission set. Browse freely \u2014 the forest stays quiet until you plant again.'; input.focus(); }, { category: ERROR_CATEGORIES.MESSAGING, function: 'browse.click' }));
 
 updateCount();
 initSafely();
