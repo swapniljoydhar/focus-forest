@@ -23,6 +23,7 @@
       catch (error) { logError(error, { ...context, category: context.category || ERROR_CATEGORIES.UNKNOWN }); throw error; }
     };
   }
+  async function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 
   // Root host: pointer-events:none so the page behind stays fully interactive.
   // Only specific children (the chip, the choice card) opt back in with auto.
@@ -35,9 +36,37 @@
   style.textContent = `:host{all:initial}#ff-root{position:fixed;z-index:2147483646;inset:0;pointer-events:none}#ff-root *{box-sizing:border-box}.chip{position:fixed;top:16px;right:18px;display:flex;align-items:center;gap:9px;max-width:min(380px,calc(100vw - 32px));padding:8px 8px 8px 12px;border:1px solid rgba(74,104,71,.22);border-radius:999px;background:linear-gradient(120deg,rgba(252,251,245,.97),rgba(243,248,239,.95));box-shadow:0 8px 28px rgba(42,65,41,.16),0 1px 0 rgba(255,255,255,.6) inset;backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);font:13px/1.25 ui-sans-serif,system-ui,-apple-system,sans-serif;color:#29432d;pointer-events:auto;cursor:default;transition:transform .18s ease,box-shadow .18s ease,opacity .2s ease;animation:ff-slide-in .28s cubic-bezier(.2,.8,.3,1) both}.chip:hover{box-shadow:0 10px 32px rgba(42,65,41,.22),0 1px 0 rgba(255,255,255,.6) inset}.chip[hidden]{display:none}.chip.dragging{transition:none;box-shadow:0 14px 40px rgba(42,65,41,.3)}.chip[data-state="interrupt"]{border-color:rgba(189,132,115,.5)}.chip[data-state="drift"]{border-color:rgba(198,165,98,.5)}.chip[data-state="resting"]{opacity:.78}.chip-seed{position:relative;width:22px;height:22px;flex:none;cursor:grab;touch-action:none}.chip-seed:active{cursor:grabbing}.chip-seed:before{content:"";position:absolute;left:3px;right:3px;bottom:3px;height:4px;border-radius:100%;background:#b9c9ac}.chip-growth-stem{position:absolute;left:10px;bottom:5px;width:3px;height:11px;border-radius:4px;background:#6c9868;transform:scaleY(.7);transform-origin:bottom}.chip-growth-leaf{position:absolute;width:7px;height:11px;border-radius:100% 0 100% 0;background:#6f9869;opacity:0;transform:scale(.25)}.chip-growth-leaf-left{left:4px;top:3px;transform:rotate(-35deg) scale(.25);transform-origin:bottom right}.chip-growth-leaf-right{right:3px;top:1px;transform:rotate(35deg) scale(.25);transform-origin:bottom left}.ff-growth-ritual .chip-growth-stem{animation:ff-grow-stem .42s cubic-bezier(.2,.8,.3,1) both}.ff-growth-ritual .chip-growth-leaf-left{animation:ff-grow-leaf-left .25s .28s ease-out both}.ff-growth-ritual .chip-growth-leaf-right{animation:ff-grow-leaf-right .25s .38s ease-out both}.ff-growth-flash .chip-seed{animation:ff-growth-flicker .16s steps(2,end) 6 both}.ff-growth-flash .chip-growth-leaf{opacity:.95}.chip-copy{display:flex;flex-direction:column;gap:1px;flex:1;min-width:0;overflow:hidden}.chip-kicker{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#6c8c68;white-space:nowrap}.chip-mission{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chip-state{font-size:11px;color:#6c8c68;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chip-actions{display:flex;gap:4px;flex:none}.chip-btn{appearance:none;border:0;border-radius:999px;background:rgba(74,104,71,.1);color:#29432d;font:inherit;font-size:11px;padding:5px 10px;cursor:pointer;transition:background .15s,transform .1s;white-space:nowrap}.chip-btn:hover{background:rgba(74,104,71,.2)}.chip-btn:active{transform:scale(.94)}.chip-btn.minimize{padding:5px 7px;font-size:13px;line-height:1}.chip.minimized .chip-copy,.chip.minimized .chip-btn:not(.minimize){display:none}.chip.minimized{padding:6px}.chip.minimized .chip-mission{display:block;font-size:11px;max-width:90px}@keyframes ff-grow-stem{to{transform:scaleY(1)}}@keyframes ff-grow-leaf-left{to{opacity:.95;transform:rotate(-35deg) scale(1)}}@keyframes ff-grow-leaf-right{to{opacity:.95;transform:rotate(35deg) scale(1)}}@keyframes ff-growth-flicker{0%,100%{opacity:1}50%{opacity:.4}}@keyframes ff-slide-in{from{opacity:0;transform:translateY(-8px) scale(.96)}}.choice-card{position:fixed;bottom:18px;right:18px;max-width:min(420px,calc(100vw - 32px));padding:18px 18px 16px;border:1px solid rgba(74,104,71,.18);border-radius:18px;background:linear-gradient(120deg,rgba(252,251,245,.98),rgba(243,248,239,.97));box-shadow:0 16px 48px rgba(42,65,41,.2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);pointer-events:auto;animation:ff-slide-up .3s cubic-bezier(.2,.8,.3,1) both}.choice-card[hidden]{display:none}.choice-card .close{position:absolute;top:10px;right:10px;border:0;background:rgba(74,104,71,.08);border-radius:999px;width:26px;height:26px;font-size:15px;line-height:1;color:#5a7355;cursor:pointer}.choice-card .close:hover{background:rgba(74,104,71,.16)}.choice-eyebrow{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6c8c68;margin:0 0 8px}.choice-card h2{font:600 15px/1.3 ui-sans-serif,system-ui,sans-serif;color:#29432d;margin:0 0 10px}.choice-copy{font:13px/1.55 ui-sans-serif,system-ui,sans-serif;color:#3d5239;margin:0 0 14px}.choice-actions{display:flex;flex-direction:column;gap:7px}.choice{appearance:none;border:1px solid rgba(74,104,71,.16);border-radius:12px;background:rgba(255,255,255,.7);color:#29432d;font:inherit;text-align:left;padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .15s,border-color .15s,transform .1s}.choice:hover{background:rgba(243,248,239,.9);border-color:rgba(74,104,71,.3);transform:translateX(2px)}.choice:active{transform:scale(.99)}.choice.primary{background:linear-gradient(120deg,rgba(108,150,103,.16),rgba(108,150,103,.1));border-color:rgba(108,150,103,.3)}.choice-icon{font-size:15px;width:20px;text-align:center;flex:none}.choice span{display:block}.choice strong{font-weight:600;font-size:13px}.choice small{font-size:11px;color:#6c8c68;margin-top:1px}@keyframes ff-slide-up{from{opacity:0;transform:translateY(12px)}}`;
   shadow.append(style);
 
-  const rootEl = document.createElement('div');
+  const makeElement = (tag, className = '', attributes = {}, text = null) => {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, value === true ? '' : String(value)));
+    if (text != null) element.textContent = text;
+    return element;
+  };
+  const makeChoice = (action, className, icon, title, copy) => {
+    const button = makeElement('button', className, { 'data-action': action });
+    const iconEl = makeElement('span', 'choice-icon', { 'aria-hidden': 'true' }, icon);
+    const textEl = makeElement('span');
+    textEl.append(makeElement('strong', '', {}, title), makeElement('small', '', {}, copy));
+    button.append(iconEl, textEl);
+    return button;
+  };
+  const rootEl = makeElement('div');
   rootEl.id = 'ff-root';
-  rootEl.innerHTML = `<div class="chip" role="group" aria-label="Focus Forest companion" hidden><span class="chip-seed" aria-hidden="true" data-drag-handle title="Drag to move"><span class="chip-growth-stem"></span><span class="chip-growth-leaf chip-growth-leaf-left"></span><span class="chip-growth-leaf chip-growth-leaf-right"></span></span><span class="chip-copy"><span class="chip-kicker">current mission</span><strong class="chip-mission"></strong><small class="chip-state" aria-live="polite"></small></span><div class="chip-actions"><button class="chip-btn" data-action="pause" aria-label="Pause Focus Forest">Pause</button><button class="chip-btn minimize" data-action="minimize" aria-label="Minimize Focus Forest">\u2013</button></div></div><section class="choice-card" role="dialog" aria-modal="false" aria-labelledby="ff-title" hidden><button class="close" data-action="dismiss" aria-label="Dismiss">\u00d7</button><p class="choice-eyebrow">A moment to choose</p><h2 id="ff-title">You may have wandered a little.</h2><p class="choice-copy"></p><div class="choice-actions"><button data-action="home" class="choice primary"><span class="choice-icon">\u21b6</span><span><strong>Return to my mission</strong><small>Go back to where this session began.</small></span></button><button data-action="compost" class="choice"><span class="choice-icon">\u2301</span><span><strong>Save this for later</strong><small>Put this curiosity in your compost pile.</small></span></button><button data-action="mission" class="choice"><span class="choice-icon">\uff0b</span><span><strong>Start a new mission</strong><small>Let this become the thing you are here to do.</small></span></button></div></section>`;
+  const chipEl = makeElement('div', 'chip', { role: 'group', 'aria-label': 'Focus Forest companion', hidden: true });
+  const seedEl = makeElement('span', 'chip-seed', { 'aria-hidden': 'true', 'data-drag-handle': '', title: 'Drag to move' });
+  seedEl.append(makeElement('span', 'chip-growth-stem'), makeElement('span', 'chip-growth-leaf chip-growth-leaf-left'), makeElement('span', 'chip-growth-leaf chip-growth-leaf-right'));
+  const copyEl = makeElement('span', 'chip-copy');
+  copyEl.append(makeElement('span', 'chip-kicker', '', 'current mission'), makeElement('strong', 'chip-mission'), makeElement('small', 'chip-state', { 'aria-live': 'polite' }));
+  const actionsEl = makeElement('div', 'chip-actions');
+  actionsEl.append(makeElement('button', 'chip-btn', { 'data-action': 'pause', 'aria-label': 'Pause Focus Forest' }, 'Pause'), makeElement('button', 'chip-btn minimize', { 'data-action': 'minimize', 'aria-label': 'Minimize Focus Forest' }, '–'));
+  chipEl.append(seedEl, copyEl, actionsEl);
+  const choiceCardEl = makeElement('section', 'choice-card', { role: 'dialog', 'aria-modal': 'false', 'aria-labelledby': 'ff-title', hidden: true });
+  choiceCardEl.append(makeElement('button', 'close', { 'data-action': 'dismiss', 'aria-label': 'Dismiss' }, '×'), makeElement('p', 'choice-eyebrow', {}, 'A moment to choose'), makeElement('h2', '', { id: 'ff-title' }, 'You may have wandered a little.'), makeElement('p', 'choice-copy'));
+  const choiceActionsEl = makeElement('div', 'choice-actions');
+  choiceActionsEl.append(makeChoice('home', 'choice primary', '↶', 'Return to my mission', 'Go back to where this session began.'), makeChoice('compost', 'choice', '⌁', 'Save this for later', 'Put this curiosity in your compost pile.'), makeChoice('mission', 'choice', '＋', 'Start a new mission', 'Let this become the thing you are here to do.'));
+  choiceCardEl.append(choiceActionsEl);
+  rootEl.append(chipEl, choiceCardEl);
   shadow.append(rootEl);
 
   const chip = shadow.querySelector('.chip');
@@ -86,7 +115,7 @@
 
   async function loadSettings() {
     try {
-      const snap = await send('GET_SNAPSHOT');
+      const snap = await send('GET_ACTIVE_VIEW');
       growthAnimationTrigger = snap.settings?.growthAnimationTrigger || 'mission-origin';
     } catch (error) {
       logError(error, { category: ERROR_CATEGORIES.MESSAGING, function: 'loadSettings' });
@@ -147,15 +176,15 @@
     chip.hidden = false;
     pauseBtn.textContent = paused ? 'Resume' : 'Pause';
     pauseBtn.setAttribute('aria-label', paused ? 'Resume Focus Forest' : 'Pause Focus Forest');
-    if (isOriginLoad) await showGrowthRitual(true); else if (enteredNewBranch) await showGrowthRitual(false); else cancelGrowthRitual();
-    if (!paused && depth >= thresholds.INTERRUPT && choiceCard.dataset.shownFor !== location.href) showChoiceCard(depth);
+    if (isOriginLoad) await safeShowGrowthRitual(true); else if (enteredNewBranch) await safeShowGrowthRitual(false); else cancelGrowthRitual();
+    if (!paused && depth >= thresholds.INTERRUPT && choiceCard.dataset.shownFor !== location.href) showChoiceSheet(depth);
     stateEl.textContent = state;
   }
 
   // DOM-safe choice sheet: all dynamic content set via textContent/elements, no innerHTML.
   function showChoiceSheet(depth) {
-    backdrop.dataset.shownFor = location.href;
-    sheetCopy.replaceChildren();
+    choiceCard.dataset.shownFor = location.href;
+    choiceCopy.replaceChildren();
     const missionEl = document.createElement('q');
     missionEl.textContent = current?.mission || '';
     const depthEl = document.createElement('strong');
@@ -206,7 +235,7 @@
   async function refresh(observe = true) {
     try {
       if (observe) await send('OBSERVE_PAGE', { url: location.href, title: document.title });
-      await update(await send('GET_ACTIVE_VIEW'));
+      await safeUpdate(await send('GET_ACTIVE_VIEW'));
     } catch { update(null); }
   }
 
@@ -224,7 +253,7 @@
     }, WATCH_INTERVAL);
   }
 
-  const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; backdrop.removeAttribute('data-shown-for'); safeRefresh(true); } };
+  const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; choiceCard.removeAttribute('data-shown-for'); safeRefresh(true); } };
   const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation' });
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
   window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow' }), { passive: true });

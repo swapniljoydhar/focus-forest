@@ -5,13 +5,23 @@ const pendingBranches = new Map();
 const MAX_PENDING_BRANCHES = 64;
 const SPA_DOMAINS = new Set(['youtube.com', 'notion.so', 'gmail.com', 'github.com', 'app.notion.so', 'docs.google.com', 'drive.google.com', 'calendar.google.com', 'mail.google.com']);
 const spaDedup = new Map();
-
+const MAX_SPA_DEDUP = 128;
 // Safe hostname extraction: never throws on malformed URLs.
 function hostnameOf(value) { try { return new URL(String(value || '')).hostname.toLowerCase(); } catch { return ''; } }
 // True when a hostname belongs to a known SPA domain or one of its subdomains.
 function isSpaDomain(hostname) { if (!hostname) return false; if (SPA_DOMAINS.has(hostname)) return true; for (const d of SPA_DOMAINS) if (hostname.endsWith(`.${d}`)) return true; return false; }
 // 1s dedup window for repeated SPA navigations on the same tab+url.
-function recentlyObservedSpa(tabId, url) { const key = `${tabId}::${url}`; if (spaDedup.has(key) && Date.now() - spaDedup.get(key) < 1000) return true; spaDedup.set(key, Date.now()); setTimeout(() => spaDedup.delete(key), 1500); return false; }
+function recentlyObservedSpa(tabId, url) {
+  const now = Date.now();
+  for (const [entryKey, seenAt] of spaDedup) if (now - seenAt >= 1500) spaDedup.delete(entryKey);
+  const key = `${tabId}::${url}`;
+  const previous = spaDedup.get(key);
+  if (previous != null && now - previous < 1000) return true;
+  if (!spaDedup.has(key) && spaDedup.size >= MAX_SPA_DEDUP) spaDedup.delete(spaDedup.keys().next().value);
+  spaDedup.set(key, now);
+  setTimeout(() => { if (spaDedup.get(key) === now) spaDedup.delete(key); }, 1500);
+  return false;
+}
 
 function prunePendingBranches() { const now = Date.now(); for (const [key, entry] of pendingBranches) if (now - entry.createdAt >= 15000) pendingBranches.delete(key); while (pendingBranches.size > MAX_PENDING_BRANCHES) pendingBranches.delete(pendingBranches.keys().next().value); }
 function pendingBranchKey(url, sourceTabId, windowId) { return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${Number.isInteger(windowId) ? windowId : 'nowin'}::${url}`; }
@@ -40,6 +50,7 @@ function replaceState(nextState) {
   const run = mutationQueue.then(async () => { await saveState(nextState); return nextState; });
   mutationQueue = run.catch((error) => {
     logError(error, { category: ERROR_CATEGORIES.STATE_MUTATION, component: 'service-worker', function: 'replaceState-catch' });
+    clearStateCache();
     return undefined;
   });
   return run;
@@ -70,11 +81,12 @@ function safeReason(value) { return ['user_ended', 'mission_changed', 'browse_wi
 function safeOriginUrl(value) { const raw = String(value || ''); return safeHttpUrl(raw) || (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) ? raw.slice(0, LIMITS.URL) : 'chrome://newtab'); }
 function safeNavigationUrl(value) { const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http; if (/^chrome-extension:\/\/[a-z0-9-]+\//i.test(raw) || raw === 'chrome://newtab') return raw.slice(0, LIMITS.URL); return null; }
 function sameOriginUrl(actual, expected) { const expectedHttp = safeHttpUrl(expected); return expectedHttp ? safeHttpUrl(actual) === expectedHttp : String(actual || '') === String(expected || ''); }
+function isExtensionPageSender(sender) { const id = chrome.runtime?.id; return typeof id === 'string' && typeof sender?.url === 'string' && sender.url.startsWith(`chrome-extension://${id}/`); }
 
-# Coerce a sender or client-supplied tab descriptor into a minimal safe shape.
-# Only numeric ids and sanitized url/title fields are preserved; the genuine
-# chrome sender.tab is preferred when present so extension pages cannot spoof
-# tab identity beyond what createSession already sanitizes.
+// Coerce a sender or client-supplied tab descriptor into a minimal safe shape.
+// Only numeric ids and sanitized url/title fields are preserved; the genuine
+// chrome sender.tab is preferred when present so extension pages cannot spoof
+// tab identity beyond what createSession already sanitizes.
 function sanitizeTab(tab) {
   if (!tab || typeof tab !== 'object') return null;
   return {
@@ -189,7 +201,7 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId, windowId) {
     }
     if (current && current.url === url) return NO_CHANGE;
     if (isSearchUrl(url) && !originNotSet) return NO_CHANGE;
-    const known = session.nodes.find((node) => node.url === url && !node.closedAt);
+    const known = session.nodes.find((node) => node.url === url && !node.closedAt && !TERMINAL_STATES.has(node.state));
     if (known) { clearPendingRedirect(session, tabId); moveTabToNode(session, tabId, known.id); const attached = attachTab(known, tabId); known.title = title; if (attached) addEvent(session, 'tab_joined_path', { nodeId: known.id, url }); else addEvent(session, 'return_to_path', { nodeId: known.id, url }); return known; }
     const opener = openerTabId && nodeForTab(session, openerTabId);
     prunePendingBranches();
@@ -264,7 +276,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!validateMessage(message)) { sendResponse(null); return false; }
   (async () => {
     switch (message.type) {
-      case 'GET_SNAPSHOT': return getSnapshot(safeId(message.sessionId) || null, Boolean(message.includeHistory));
+      case 'GET_SNAPSHOT': return isExtensionPageSender(sender) ? getSnapshot(safeId(message.sessionId) || null, Boolean(message.includeHistory)) : null;
       case 'GET_ACTIVE_VIEW': return activeView(await loadState(), tab?.id);
       case 'START_MISSION': return typeof message.mission === 'string' ? createSession(message.mission, sanitizeTab(tab) || sanitizeTab(message.tab)) : null;
       case 'END_MISSION': return endSession(safeReason(message.reason));
@@ -282,11 +294,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       case 'COMPOST': return Number.isInteger(tab?.id) ? compost(tab.id, message.url, message.title) : null;
       case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }) : null;
-      case 'UPDATE_SETTINGS': return isRecord(message.settings) ? mutate((state) => { const next = normalizeSettings({ ...state.settings, ...message.settings }); if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE; state.settings = next; const session = activeSession(state); if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); }); return state.settings; }) : null;
-      case 'DELETE_COMPOST': return safeId(message.id) ? mutate((state) => { const before = state.compostItems.length; state.compostItems = state.compostItems.filter((item) => item.id !== message.id); return before === state.compostItems.length ? NO_CHANGE : state.compostItems; }) : null;
-      case 'PRUNE_NODE': return safeId(message.sessionId) && safeId(message.nodeId) ? pruneNode(message.sessionId, message.nodeId, Boolean(message.toCompost)) : null;
-      case 'DELETE_SESSION': return safeId(message.sessionId) ? mutate((state) => { const before = state.sessions.length; state.sessions = state.sessions.filter((session) => session.id !== message.sessionId); if (state.activeSessionId === message.sessionId) state.activeSessionId = null; return before === state.sessions.length ? NO_CHANGE : state.sessions; }) : null;
-      case 'CLEAR_DATA': return replaceState(emptyState());
+      case 'UPDATE_SETTINGS': return isExtensionPageSender(sender) && isRecord(message.settings) ? mutate((state) => { const next = normalizeSettings({ ...state.settings, ...message.settings }); if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE; state.settings = next; const session = activeSession(state); if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); }); return state.settings; }) : null;
+      case 'DELETE_COMPOST': return isExtensionPageSender(sender) && safeId(message.id) ? mutate((state) => { const before = state.compostItems.length; state.compostItems = state.compostItems.filter((item) => item.id !== message.id); return before === state.compostItems.length ? NO_CHANGE : state.compostItems; }) : null;
+      case 'PRUNE_NODE': return isExtensionPageSender(sender) && safeId(message.sessionId) && safeId(message.nodeId) ? pruneNode(message.sessionId, message.nodeId, Boolean(message.toCompost)) : null;
+      case 'DELETE_SESSION': return isExtensionPageSender(sender) && safeId(message.sessionId) ? mutate((state) => { const before = state.sessions.length; state.sessions = state.sessions.filter((session) => session.id !== message.sessionId); if (state.activeSessionId === message.sessionId) state.activeSessionId = null; return before === state.sessions.length ? NO_CHANGE : state.sessions; }) : null;
+      case 'CLEAR_DATA': return isExtensionPageSender(sender) ? replaceState(emptyState()) : null;
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
         // Never navigate a live tab to the chrome://newtab placeholder; if no real
@@ -341,8 +353,14 @@ function validateMessage(message) {
   for (const [key, kind] of Object.entries(schema)) {
     const optional = kind.endsWith('?');
     const base = optional ? kind.slice(0, -1) : kind;
-    if (!(key in message)) return optional;
-    if (message[key] == null) return optional;
+    if (!(key in message)) {
+      if (!optional) return false;
+      continue;
+    }
+    if (message[key] == null) {
+      if (!optional) return false;
+      continue;
+    }
     if (!TYPE_CHECKS[base](message[key])) return false;
   }
   return true;

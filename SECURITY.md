@@ -16,7 +16,7 @@ The service worker sanitizes all error responses returned to content scripts. In
 
 ## Message Validation
 
-All runtime messages are validated against explicit per-type schemas before processing. Sender identity is checked against `chrome.runtime.id` to reject external messages. Malformed or unexpected messages are rejected without side effects.
+All runtime messages are validated against explicit per-type schemas before processing. Sender identity is checked against `chrome.runtime.id` to reject external messages. Full snapshots and global settings writes are additionally restricted to senders whose URL is an extension page belonging to this extension. Destructive garden operations—clear data, session deletion, pruning, and compost deletion—use the same extension-page boundary. Malformed or unexpected messages are rejected without side effects.
 
 ## State Caching
 
@@ -28,7 +28,7 @@ Node tab associations are stored as `tabIds` arrays only. Legacy `tabId` fields 
 
 ## Content Script Isolation
 
-The companion chip renders inside a closed shadow root. Its styles are scoped to the shadow boundary and never leak into the host page. No external stylesheet or web-accessible resource is used for the companion. Dynamic content in the choice sheet uses DOM-safe construction instead of `innerHTML`.
+The companion chip renders inside a closed shadow root. Its styles are scoped to the shadow boundary and never leak into the host page. No external stylesheet or web-accessible resource is used for the companion. Static and dynamic companion content use DOM-safe construction with element creation, attributes, `textContent`, and `append`; the content script contains no `innerHTML` sink.
 
 ## Data Storage
 
