@@ -116,6 +116,7 @@ export function normalizeSettings(value, fallback = emptyState().settings) {
 }
 
 let stateCache = null;
+let ownWriteInFlight = false;
 
 export async function loadState() {
   if (stateCache !== null) return stateCache;
@@ -129,11 +130,27 @@ export async function loadState() {
 }
 
 export async function saveState(state) {
-  await chrome.storage.local.set({ [STORAGE_KEY]: state });
-  stateCache = state;
+  ownWriteInFlight = true;
+  try {
+    await chrome.storage.local.set({ [STORAGE_KEY]: state });
+    stateCache = state;
+  } finally {
+    ownWriteInFlight = false;
+  }
   return state;
 }
 
 export function clearStateCache() {
   stateCache = null;
+}
+
+// Invalidate the in-memory cache when storage is written from any external
+// context (onInstalled seeding, a second extension page, a service-worker
+// restart) so loadState() never serves a stale snapshot. Self-writes made
+// through saveState() are excluded so the cache stays useful within the
+// serialized mutation queue.
+if (typeof chrome !== 'undefined' && chrome.storage?.onChanged?.addListener) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && changes[STORAGE_KEY] && !ownWriteInFlight) stateCache = null;
+  });
 }
