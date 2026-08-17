@@ -98,11 +98,81 @@
   const minimizeBtn = shadow.querySelector('[data-action="minimize"]');
   let current = null;
   let lastUrl = location.href;
+  let lastTitle = document.title;
   let ritualToken = 0;
   let ritualTimer = 0;
   let growthAnimationTrigger = 'mission-origin';
   let originRitualPlayed = false;
   try { originRitualPlayed = sessionStorage.getItem('ff-origin-ritual-played') === 'true'; } catch { /* storage may be unavailable */ }
+
+  // === SPA SUPPORT: Intercept history.pushState and history.replaceState ===
+  // This ensures we detect navigation in Single Page Applications (Gmail, Twitter, YouTube, etc.)
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  
+  const notifyUrlChange = wrapWithErrorBoundary(() => {
+    // Debounce rapid changes
+    if (lastUrl !== location.href || lastTitle !== document.title) {
+      lastUrl = location.href;
+      lastTitle = document.title;
+      safeUpdate(); // Trigger update with new URL
+    }
+  }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'notifyUrlChange', swallow: true });
+
+  history.pushState = function(...args) {
+    const result = originalPushState.apply(this, args);
+    notifyUrlChange();
+    return result;
+  };
+
+  history.replaceState = function(...args) {
+    const result = originalReplaceState.apply(this, args);
+    notifyUrlChange();
+    return result;
+  };
+
+  // === SPA SUPPORT: MutationObserver for dynamic title changes ===
+  // Some SPAs change titles without pushing state
+  const titleObserver = new MutationObserver(wrapWithErrorBoundary(() => {
+    if (document.title !== lastTitle) {
+      lastTitle = document.title;
+      notifyUrlChange();
+    }
+  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'titleObserver', swallow: true }));
+  
+  const titleElement = document.querySelector('title');
+  if (titleElement) {
+    titleObserver.observe(titleElement, { childList: true, characterData: true });
+  }
+
+  // === CHIP INTERFACE UX: Smart auto-hide on scroll, show on pause ===
+  let scrollTimeout = 0;
+  let isChipVisible = true;
+  
+  const hideChip = () => {
+    if (!chip.classList.contains('minimized') && !choiceCard.hidden) return;
+    isChipVisible = false;
+    chip.style.opacity = '0';
+    chip.style.transform = 'translateY(-8px)';
+  };
+  
+  const showChip = () => {
+    isChipVisible = true;
+    chip.style.opacity = '';
+    chip.style.transform = '';
+  };
+
+  window.addEventListener('scroll', wrapWithErrorBoundary(() => {
+    clearTimeout(scrollTimeout);
+    if (!isChipVisible) showChip();
+    scrollTimeout = setTimeout(hideChip, 1500);
+  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'scrollHandler', swallow: true }));
+
+  // Show chip when user pauses or interacts
+  chip.addEventListener('mouseenter', showChip);
+  chip.addEventListener('mouseleave', () => {
+    scrollTimeout = setTimeout(hideChip, 2000);
+  });
 
   // --- Drag-to-move the chip (Pointer Events + setPointerCapture) ---
   let chipPos = null;
@@ -277,6 +347,9 @@
   const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; choiceCard.removeAttribute('data-shown-for'); safeRefresh(true); } };
   const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation', swallow: true });
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
+  
+  // SPA navigation detection already implemented above with history interception and MutationObserver
+  
   window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow', swallow: true }), { passive: true });
   document.addEventListener('visibilitychange', wrapWithErrorBoundary(() => { if (document.hidden) window.clearTimeout(watchTimer); else { safeRefresh(false); scheduleWatch(); } }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'visibilitychange', swallow: true }));
 
