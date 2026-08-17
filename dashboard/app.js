@@ -149,6 +149,61 @@ async function selectNode(nodeId, returnFocus = false) { selectedNodeId = nodeId
 sessionSelect.addEventListener('change', wrapWithErrorBoundary(() => { selectedSessionId = sessionSelect.value; selectedNodeId = null; renderSafely(); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'sessionSelect.change', swallow: true }));
 svg.addEventListener('click', wrapWithErrorBoundary(event => { const node = event.target.closest?.('[data-node-id]'); if (node) safeSelectNode(node.dataset.nodeId); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'svg.click', swallow: true }));
 svg.addEventListener('keydown', wrapWithErrorBoundary(event => { const node = event.target.closest?.('[data-node-id]'); if (node && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); safeSelectNode(node.dataset.nodeId, true); } }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'svg.keydown', swallow: true }));
+
+// Tree keyboard navigation with arrow keys
+svg.addEventListener('keydown', wrapWithErrorBoundary(event => {
+  if (!selectedNodeId) return;
+  const currentNode = session?.nodes.find(n => n.id === selectedNodeId);
+  if (!currentNode) return;
+  
+  // Find siblings and parent
+  const siblings = session.nodes.filter(n => n.parentId === currentNode.parentId && n.id !== selectedNodeId);
+  const parent = currentNode.parentId ? session.nodes.find(n => n.id === currentNode.parentId) : null;
+  const children = session.nodes.filter(n => n.parentId === selectedNodeId);
+  
+  let targetId = null;
+  switch(event.key) {
+    case 'ArrowDown':
+      // Navigate to first child
+      if (children.length > 0) {
+        targetId = children[0].id;
+      }
+      break;
+    case 'ArrowUp':
+      // Navigate to parent
+      if (parent) {
+        targetId = parent.id;
+      }
+      break;
+    case 'ArrowRight':
+      // Navigate to next sibling or first child
+      if (children.length > 0) {
+        targetId = children[0].id;
+      } else {
+        const currentIndex = siblings.findIndex(s => s.id === selectedNodeId);
+        if (currentIndex < siblings.length - 1) {
+          targetId = siblings[currentIndex + 1].id;
+        }
+      }
+      break;
+    case 'ArrowLeft':
+      // Navigate to previous sibling or parent
+      const prevIndex = siblings.findIndex(s => s.id === selectedNodeId);
+      if (prevIndex > 0) {
+        targetId = siblings[prevIndex - 1].id;
+      } else if (parent) {
+        targetId = parent.id;
+      }
+      break;
+    default:
+      return;
+  }
+  
+  if (targetId) {
+    event.preventDefault();
+    safeSelectNode(targetId, true);
+  }
+}, { category: ERROR_CATEGORIES.UI_RENDER, function: 'svg.arrowNavigation', swallow: true }));
 svg.addEventListener('mouseover', wrapWithErrorBoundary(event => { const node = event.target.closest?.('[data-node-id]'); if (node) node.classList.add('hovered'); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'svg.mouseover', swallow: true }));
 svg.addEventListener('mouseout', wrapWithErrorBoundary(event => { const node = event.target.closest?.('[data-node-id]'); if (node) node.classList.remove('hovered'); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'svg.mouseout', swallow: true }));
 detail.addEventListener('click', wrapWithErrorBoundary(async event => { const action = event.target.dataset.branchAction; if (!action) return; if (action === 'close') { selectedNodeId = null; await renderSafely(); return; } if (!selectedSessionId || !selectedNodeId) return; await message('PRUNE_NODE', { sessionId: selectedSessionId, nodeId: selectedNodeId, toCompost: action === 'compost' }); await renderSafely(); }, { category: ERROR_CATEGORIES.MESSAGING, function: 'detail.click', swallow: true }));
@@ -156,6 +211,60 @@ document.querySelector('#compost').addEventListener('click', wrapWithErrorBounda
 document.querySelector('#forget').addEventListener('click', wrapWithErrorBoundary(event => { if (selectedSessionId) openCareDialog('forget', event.currentTarget); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'forget.click', swallow: true }));
 document.querySelector('#clear').addEventListener('click', wrapWithErrorBoundary(event => openCareDialog('clear', event.currentTarget), { category: ERROR_CATEGORIES.UI_RENDER, function: 'clear.click', swallow: true }));
 document.querySelector('#theme-toggle').addEventListener('click', wrapWithErrorBoundary(() => { const html = document.documentElement; const current = html.getAttribute('data-theme') || 'light'; const next = current === 'light' ? 'dark' : 'light'; html.setAttribute('data-theme', next); try { localStorage.setItem('focus-forest-theme', next); } catch (e) { /* storage may be unavailable */ } }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'theme-toggle.click', swallow: true }));
+
+// Export session functionality
+async function exportSession(sessionId) {
+  try {
+    const snap = await message('GET_SNAPSHOT');
+    const session = snap.state.sessions.find(s => s.id === sessionId);
+    if (!session) {
+      logError(new Error('Session not found'), { category: ERROR_CATEGORIES.STORAGE, function: 'exportSession' });
+      return;
+    }
+    // Create export object with metadata
+    const exportData = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      mission: session.mission,
+      nodeCount: session.nodes.length,
+      deepestBranch: Math.max(0, ...session.nodes.map(n => n.depth)),
+      compostCount: session.events.filter(e => e.type === 'composted').length,
+      // Strip sensitive data, keep only essential structure
+      tree: session.nodes.map(n => ({
+        id: n.id,
+        title: n.title,
+        url: n.url,
+        depth: n.depth,
+        state: n.state,
+        firstSeenAt: n.firstSeenAt,
+        closedAt: n.closedAt,
+        prunedAt: n.prunedAt
+      })),
+      events: session.events.map(e => ({
+        type: e.type,
+        timestamp: e.timestamp,
+        url: e.url
+      }))
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `focus-forest-${sessionId.slice(0, 8)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    logError(error, { category: ERROR_CATEGORIES.STORAGE, function: 'exportSession' });
+  }
+}
+
+document.getElementById('export-session')?.addEventListener('click', wrapWithErrorBoundary(async () => {
+  if (selectedSessionId) {
+    await exportSession(selectedSessionId);
+  }
+}, { category: ERROR_CATEGORIES.UI_RENDER, function: 'export.click', swallow: true }));
 
 // Load saved theme preference on startup
 (function loadThemePreference() {

@@ -17,6 +17,11 @@
 .empty-seed{margin-bottom:14px;color:#78a172;font-size:26px}
 .empty h1{font:500 23px/1.1 Georgia,serif;margin:0 0 12px}
 .empty p:last-child{margin:0;color:#7b8978;line-height:1.5}
+.template-section{margin-top:24px;padding-top:16px;border-top:1px solid rgba(190,211,184,.4)}
+.template-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.template-chip{padding:6px 11px;border:1px solid #c5d4be;background:rgba(248,251,246,.9);border-radius:16px;color:#5a7559;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s ease}
+.template-chip:hover{background:#e8f0e5;border-color:#a8c4a2;transform:translateY(-1px)}
+.template-chip:active{transform:scale(.97)}
 h1{margin:0;font:500 26px/1.15 Georgia,serif;letter-spacing:-.02em;overflow-wrap:anywhere}
 .state-line{min-height:20px;margin:8px 0 18px;color:#728270;font-size:12px}
 .branch-meter{margin-bottom:20px}

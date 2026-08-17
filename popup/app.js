@@ -1,5 +1,14 @@
 import { logError, wrapWithErrorBoundary, ERROR_CATEGORIES } from '../shared/error-tracing.js';
 
+// Mission Templates for quick intention setting
+const MISSION_TEMPLATES = [
+  { id: 'research', label: 'Research', prefix: 'Research ', placeholder: 'a topic for learning' },
+  { id: 'compare', label: 'Compare', prefix: 'Compare ', placeholder: 'option A vs option B' },
+  { id: 'learn', label: 'Learn', prefix: 'Learn about ', placeholder: 'a subject or skill' },
+  { id: 'find', label: 'Find', prefix: 'Find resources for ', placeholder: 'a goal or project' },
+  { id: 'explore', label: 'Explore', prefix: 'Explore ', placeholder: 'an idea or concept' }
+];
+
 async function message(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 const empty = document.querySelector('#empty'); const active = document.querySelector('#active'); const completion = document.querySelector('#completion'); const footer = document.querySelector('#popup-footer');
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -44,5 +53,33 @@ document.querySelector('#end').addEventListener('click', wrapWithErrorBoundary((
 document.querySelector('#complete').addEventListener('click', wrapWithErrorBoundary(async () => { await message('END_MISSION', { reason: 'user_ended' }); ritualReturnFocus = null; await renderSafely(); }, { category: ERROR_CATEGORIES.MESSAGING, function: 'complete.click', swallow: true }));
 document.querySelector('#keep').addEventListener('click', wrapWithErrorBoundary(() => { active.hidden = false; setRitual(false); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'keep.click', swallow: true }));
 document.querySelector('#review').addEventListener('click', wrapWithErrorBoundary(() => chrome.tabs.create({ url: chrome.runtime.getURL('dashboard/index.html') }), { category: ERROR_CATEGORIES.UI_RENDER, function: 'review.click', swallow: true }));
+
+// Render mission templates in empty state
+function renderTemplates() {
+  const container = document.getElementById('template-chips');
+  if (!container) return;
+  container.replaceChildren();
+  MISSION_TEMPLATES.forEach(template => {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'template-chip';
+    chip.textContent = template.label;
+    chip.setAttribute('aria-label', `Start mission: ${template.prefix}${template.placeholder}`);
+    chip.addEventListener('click', wrapWithErrorBoundary(async () => {
+      try {
+        // Open new tab with focus forest and pre-fill mission input
+        const url = chrome.runtime.getURL('newtab.html');
+        const tab = await chrome.tabs.create({ url });
+        // Store template prefix for new tab to pick up
+        await chrome.storage.local.set({ pendingMissionPrefix: template.prefix, pendingMissionPlaceholder: template.placeholder });
+      } catch (error) {
+        logError(error, { category: ERROR_CATEGORIES.MESSAGING, function: 'template.click' });
+      }
+    }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'template.click', swallow: true }));
+    container.appendChild(chip);
+  });
+}
+
 document.addEventListener('keydown', wrapWithErrorBoundary((event) => { if (event.key === 'Escape' && !completion.hidden) { active.hidden = false; setRitual(false); } }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'keydown', swallow: true }));
 renderSafely();
+renderTemplates();
