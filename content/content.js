@@ -277,6 +277,28 @@
   const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; choiceCard.removeAttribute('data-shown-for'); safeRefresh(true); } };
   const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation', swallow: true });
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
+  
+  // Intercept history.pushState and history.replaceState for SPA navigation detection
+  // This ensures we catch URL changes in React, Vue, Angular, and other SPA frameworks
+  const originalPushState = history.pushState;
+  const originalReplaceState = history.replaceState;
+  
+  history.pushState = new Proxy(originalPushState, {
+    apply: (target, thisArg, args) => {
+      const result = Reflect.apply(target, thisArg, args);
+      onNavigation();
+      return result;
+    }
+  });
+  
+  history.replaceState = new Proxy(originalReplaceState, {
+    apply: (target, thisArg, args) => {
+      const result = Reflect.apply(target, thisArg, args);
+      onNavigation();
+      return result;
+    }
+  });
+  
   window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow', swallow: true }), { passive: true });
   document.addEventListener('visibilitychange', wrapWithErrorBoundary(() => { if (document.hidden) window.clearTimeout(watchTimer); else { safeRefresh(false); scheduleWatch(); } }, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'visibilitychange', swallow: true }));
 
