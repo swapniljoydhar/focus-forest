@@ -3,28 +3,155 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Focus Forest — Plant a mission</title>
+  <title>Focus Forest — Plant Your Intention</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="ambient" aria-hidden="true"><span class="sun-wash"></span><span class="hill hill-back"></span><span class="hill hill-front"></span></div>
-  <main class="planting-shell">
-    <header class="topbar"><div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div><span class="brand-name">Focus Forest</span><span class="private-note">Stays on this device</span></header>
-    <section class="hero" aria-labelledby="page-title">
-      <div class="seed-illustration" aria-hidden="true"><div class="seed-glow"></div><div class="seed-shape"></div><div class="stem"></div><div class="leaf leaf-left"></div><div class="leaf leaf-right"></div></div>
-      <p class="eyebrow">A small ritual for the open web</p>
-      <h1 id="page-title">What are you here<br><em>to grow today?</em></h1>
-      <p class="lede">Name the thing you want to leave with. The web can be wide; your intention gives it a path.</p>
-      <form id="mission-form" class="mission-form">
-        <label for="mission">My mission is</label>
-        <div class="input-wrap"><input id="mission" maxlength="140" autocomplete="off" placeholder="Compare laptops for university…" required><span id="count" class="count">0/140</span></div>
-        <button class="plant-button" type="submit"><span>Plant this mission</span><span aria-hidden="true">→</span></button>
+  <!-- Ambient background with subtle nature elements -->
+  <div class="ambient" aria-hidden="true">
+    <div class="sky-gradient"></div>
+    <div class="sun-glow"></div>
+    <div class="distant-hills">
+      <svg viewBox="0 0 1200 200" preserveAspectRatio="none">
+        <path class="hill-path hill-back" d="M0,120 C150,80 300,140 450,100 C600,60 750,110 900,90 C1050,70 1200,130 1200,130 L1200,200 L0,200 Z"/>
+        <path class="hill-path hill-front" d="M0,150 C200,130 350,160 500,140 C650,120 800,150 950,135 C1100,120 1200,145 1200,145 L1200,200 L0,200 Z"/>
+      </svg>
+    </div>
+    <div class="floating-particles"></div>
+  </div>
+  
+  <main class="planting-container">
+    <!-- Header with brand -->
+    <header class="page-header">
+      <div class="logo-container">
+        <svg class="logo-mark" viewBox="0 0 40 40" aria-hidden="true">
+          <path class="logo-trunk" d="M18,35 L18,22 C18,22 16,18 14,16 C12,14 15,12 17,14 C19,16 20,20 20,22 L20,35"/>
+          <path class="logo-branch logo-branch-left" d="M18,28 C18,28 14,24 12,22 C10,20 11,18 13,19 C15,20 17,23 18,25"/>
+          <path class="logo-branch logo-branch-right" d="M18,26 C18,26 22,23 24,21 C26,19 25,17 23,18 C21,19 19,22 18,24"/>
+          <circle class="logo-leaf logo-leaf-1" cx="14" cy="22" r="3"/>
+          <circle class="logo-leaf logo-leaf-2" cx="24" cy="21" r="2.5"/>
+          <circle class="logo-leaf logo-leaf-3" cx="17" cy="16" r="2"/>
+        </svg>
+      </div>
+      <div class="brand-text">
+        <h1 class="brand-name">Focus Forest</h1>
+        <span class="privacy-badge">
+          <span class="lock-icon" aria-hidden="true">🔒</span>
+          Local & Private
+        </span>
+      </div>
+    </header>
+    
+    <!-- Main hero section -->
+    <section class="hero-section" aria-labelledby="main-heading">
+      <!-- Animated sapling illustration -->
+      <div class="sapling-container" aria-hidden="true">
+        <svg class="sapling-svg" viewBox="0 0 200 180">
+          <!-- Ground line -->
+          <ellipse class="ground-shadow" cx="100" cy="165" rx="60" ry="8"/>
+          
+          <!-- Growing sapling (will animate) -->
+          <g class="sapling-growth">
+            <!-- Trunk -->
+            <path class="sapling-trunk" d="M96,165 C94,140 95,120 98,100 C99,95 101,95 102,100 C105,120 106,140 104,165"/>
+            
+            <!-- Primary branches -->
+            <path class="sapling-branch branch-left" d="M98,130 C98,130 88,125 82,122 C78,120 79,118 83,120 C89,123 96,127 98,129"/>
+            <path class="sapling-branch branch-right" d="M100,125 C100,125 110,120 116,118 C120,116 119,118 115,120 C109,123 102,126 100,128"/>
+            
+            <!-- Secondary branches -->
+            <path class="sapling-branch branch-sub-left" d="M86,124 C86,124 80,120 76,118"/>
+            <path class="sapling-branch branch-sub-right" d="M112,120 C112,120 118,116 122,115"/>
+            
+            <!-- Leaf buds -->
+            <circle class="leaf-bud bud-1" cx="82" cy="122" r="4"/>
+            <circle class="leaf-bud bud-2" cx="116" cy="118" r="3.5"/>
+            <circle class="leaf-bud bud-3" cx="76" cy="118" r="3"/>
+            <circle class="leaf-bud bud-4" cx="122" cy="115" r="2.5"/>
+            <circle class="leaf-bud bud-top" cx="100" cy="100" r="4.5"/>
+          </g>
+        </svg>
+      </div>
+      
+      <div class="hero-content">
+        <p class="intro-eyebrow">INTENTIONAL BROWSING</p>
+        <h2 id="main-heading" class="main-heading">
+          What would you like<br/>
+          <em class="highlight-text">to cultivate today?</em>
+        </h2>
+        <p class="hero-description">
+          Set a gentle intention before exploring the web. 
+          Focus Forest helps you notice when you're wandering, 
+          without blocking or judging your curiosity.
+        </p>
+      </div>
+      
+      <!-- Mission input form -->
+      <form id="mission-form" class="mission-form" novalidate>
+        <div class="form-group">
+          <label for="mission-input" class="form-label">
+            <span class="label-icon" aria-hidden="true">🌱</span>
+            My intention for this session:
+          </label>
+          <div class="input-container">
+            <input 
+              id="mission-input" 
+              type="text" 
+              maxlength="140" 
+              autocomplete="off" 
+              placeholder="e.g., Research universities for computer science programs..." 
+              required
+              aria-describedby="input-hint char-count"
+            />
+            <div class="char-counter">
+              <span id="char-current">0</span><span class="char-separator">/</span><span id="char-max">140</span>
+            </div>
+          </div>
+          <p id="input-hint" class="input-hint">Be specific but flexible. This guides your awareness, not a rigid rule.</p>
+        </div>
+        
+        <button type="submit" class="plant-btn" aria-label="Plant your intention and start browsing">
+          <span class="btn-content">
+            <span class="btn-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="20" height="20">
+                <path d="M12,2 C12,2 8,6 8,10 C8,14 10,16 12,18 C14,16 16,14 16,10 C16,6 12,2 12,2 Z"/>
+                <path d="M12,18 L12,22"/>
+                <path d="M12,20 L10,22"/>
+                <path d="M12,20 L14,22"/>
+              </svg>
+            </span>
+            <span class="btn-text">Plant Intention</span>
+          </span>
+          <span class="btn-arrow" aria-hidden="true">→</span>
+        </button>
       </form>
-      <p id="status" class="status" role="status" aria-live="polite"></p>
-      <div class="secondary-actions"><button id="resume" hidden>Resume current mission</button><button id="browse" type="button">Browse without a mission</button></div>
+      
+      <!-- Status message area -->
+      <div id="form-status" class="status-message" role="status" aria-live="polite" hidden></div>
+      
+      <!-- Alternative actions -->
+      <div class="alternative-actions">
+        <button id="resume-mission-btn" type="button" class="action-btn action-secondary" hidden>
+          <span class="action-icon" aria-hidden="true">↺</span>
+          <span class="action-text">Continue Current Session</span>
+        </button>
+        <button id="browse-freely-btn" type="button" class="action-btn action-ghost">
+          <span class="action-text">Explore Without Intention</span>
+        </button>
+      </div>
     </section>
-    <footer><span class="footer-leaf" aria-hidden="true">⌁</span><span>Curiosity is welcome here.</span><span class="weather-note">A private clearing in your browser</span></footer>
+    
+    <!-- Footer with gentle messaging -->
+    <footer class="page-footer">
+      <div class="footer-divider"></div>
+      <div class="footer-content">
+        <span class="footer-symbol" aria-hidden="true">🍃</span>
+        <p class="footer-tagline">Your curiosity belongs here.</p>
+        <p class="footer-note">All data stays on this device • No tracking • Open source</p>
+      </div>
+    </footer>
   </main>
+  
   <script type="module" src="app.js"></script>
 </body>
 </html>
