@@ -12,7 +12,8 @@
   },
   "permissions": [
     "storage",
-    "webNavigation"
+    "webNavigation",
+    "alarms"
   ],
   "host_permissions": [
     "http://*/*",
