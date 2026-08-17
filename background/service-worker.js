@@ -262,6 +262,129 @@ async function getSnapshot(sessionId = null, includeHistory = false) {
   return { state, session: selected || activeSession(state) || latest, activeSessionId: state.activeSessionId, thresholds: effectiveThresholds(state.settings), settings: normalizeSettings(state.settings) };
 }
 
+// Dashboard statistics aggregation
+async function getDashboardStats() {
+  const state = await loadState();
+  const now = Date.now();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const sevenDaysAgo = now - (7 * oneDayMs);
+
+  // Calculate total sessions and focus time
+  let totalSessions = 0;
+  let totalFocusTime = 0;
+  const domainCounts = {};
+  const dailyMinutes = {};
+  
+  // Initialize last 7 days
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date(now - (i * oneDayMs));
+    const key = date.toLocaleDateString(undefined, { weekday: 'short' });
+    dailyMinutes[key] = 0;
+  }
+
+  // Process all sessions
+  for (const session of state.sessions) {
+    totalSessions++;
+    
+    // Calculate session duration from events
+    let sessionDuration = 0;
+    const sessionStart = session.createdAt || now;
+    const sessionEnd = session.endedAt || now;
+    
+    for (const node of session.nodes) {
+      if (node.firstSeenAt && node.closedAt) {
+        sessionDuration += (node.closedAt - node.firstSeenAt) / 1000;
+      } else if (node.firstSeenAt) {
+        sessionDuration += (now - node.firstSeenAt) / 1000;
+      }
+      
+      // Domain counting
+      try {
+        const hostname = new URL(node.url).hostname.toLowerCase();
+        domainCounts[hostname] = (domainCounts[hostname] || 0) + 1;
+      } catch { /* ignore invalid URLs */ }
+    }
+    
+    totalFocusTime += sessionDuration;
+    
+    // Daily breakdown
+    const dayKey = new Date(sessionStart).toLocaleDateString(undefined, { weekday: 'short' });
+    if (dailyMinutes.hasOwnProperty(dayKey)) {
+      dailyMinutes[dayKey] += Math.floor(sessionDuration / 60);
+    }
+  }
+
+  // Calculate streak
+  let currentStreak = 0;
+  for (let i = 0; i < 365; i++) {
+    const checkDate = new Date(now - (i * oneDayMs));
+    const dayKey = checkDate.toLocaleDateString(undefined, { weekday: 'short' });
+    if (dailyMinutes[dayKey] > 0) {
+      currentStreak++;
+    } else if (i > 0) {
+      break;
+    }
+  }
+
+  // Format weekly data
+  const weeklyData = Object.entries(dailyMinutes).map(([day, minutes]) => ({ day, minutes }));
+
+  // Format domain data (top 5)
+  const domainData = Object.entries(domainCounts)
+    .map(([domain, count]) => ({ domain, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  // Recent history (last 10 sessions)
+  const history = state.sessions.slice(-10).reverse().map(session => {
+    const duration = session.nodes.reduce((acc, node) => {
+      if (node.firstSeenAt && node.closedAt) return acc + (node.closedAt - node.firstSeenAt);
+      if (node.firstSeenAt) return acc + (now - node.firstSeenAt);
+      return acc;
+    }, 0) / 1000;
+    
+    return {
+      timestamp: session.createdAt || now,
+      domain: session.origin?.url ? (() => { try { return new URL(session.origin.url).hostname; } catch { return 'Unknown'; } })() : 'Unknown',
+      duration: Math.floor(duration),
+      type: 'focus'
+    };
+  });
+
+  // Get saved items (compost)
+  const savedItems = state.compostItems.map(item => ({
+    id: item.id,
+    url: item.url,
+    title: item.title,
+    savedAt: item.savedAt
+  }));
+
+  return {
+    totalSessions,
+    totalFocusTime: Math.floor(totalFocusTime),
+    currentStreak,
+    weeklyData,
+    domainData,
+    history,
+    savedItems
+  };
+}
+
+// Remove saved item
+async function removeSavedItem(id) {
+  return mutate((state) => {
+    const before = state.compostItems.length;
+    state.compostItems = state.compostItems.filter(item => item.id !== id);
+    return before === state.compostItems.length ? NO_CHANGE : state.compostItems;
+  });
+}
+
+// Export all data
+async function exportAllData() {
+  const state = await loadState();
+  return { data: state };
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   wrapWithErrorBoundary(async () => {
     const result = await chrome.storage.local.get(STORAGE_KEY);
@@ -299,6 +422,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'PRUNE_NODE': return isExtensionPageSender(sender) && safeId(message.sessionId) && safeId(message.nodeId) ? pruneNode(message.sessionId, message.nodeId, Boolean(message.toCompost)) : null;
       case 'DELETE_SESSION': return isExtensionPageSender(sender) && safeId(message.sessionId) ? mutate((state) => { const before = state.sessions.length; state.sessions = state.sessions.filter((session) => session.id !== message.sessionId); if (state.activeSessionId === message.sessionId) state.activeSessionId = null; return before === state.sessions.length ? NO_CHANGE : state.sessions; }) : null;
       case 'CLEAR_DATA': return isExtensionPageSender(sender) ? replaceState(emptyState()) : null;
+      case 'GET_DASHBOARD_STATS': return isExtensionPageSender(sender) ? getDashboardStats() : null;
+      case 'REMOVE_SAVED_ITEM': return isExtensionPageSender(sender) && safeId(message.id) ? removeSavedItem(message.id) : null;
+      case 'EXPORT_DATA': return isExtensionPageSender(sender) ? exportAllData() : null;
+      case 'CLEAR_ALL_DATA': return isExtensionPageSender(sender) ? replaceState(emptyState()) : null;
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
         // Never navigate a live tab to the chrome://newtab placeholder; if no real
@@ -339,6 +466,10 @@ const SCHEMAS = {
   PRUNE_NODE: { sessionId: 'string', nodeId: 'string', toCompost: 'boolean?' },
   DELETE_SESSION: { sessionId: 'string' },
   CLEAR_DATA: {},
+  GET_DASHBOARD_STATS: {},
+  REMOVE_SAVED_ITEM: { id: 'string' },
+  EXPORT_DATA: {},
+  CLEAR_ALL_DATA: {},
   GO_HOME: {}
 };
 const TYPE_CHECKS = {

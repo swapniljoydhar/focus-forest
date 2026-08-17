@@ -1,34 +1,49 @@
 (() => {
   if (location.protocol === 'chrome-extension:' || location.protocol === 'chrome:' || location.protocol === 'edge:') return;
 
-  // Minimal error tracing for content script
-  const ERROR_CATEGORIES = { CONTENT_SCRIPT: 'content_script', MESSAGING: 'messaging', UI_RENDER: 'ui_render', UNKNOWN: 'unknown' };
-  const ERROR_SEVERITY = { CRITICAL: 'critical', HIGH: 'high', MEDIUM: 'medium', LOW: 'low' };
-  function logError(error, context = {}) {
+  // Fallback implementations in case module loading fails
+  const fallbackErrorCategories = { CONTENT_SCRIPT: 'content_script', MESSAGING: 'messaging', UI_RENDER: 'ui_render', UNKNOWN: 'unknown' };
+  function fallbackLogError(error, context = {}) {
     const trace = {
       id: `err_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
       timestamp: Date.now(),
       message: error?.message || String(error),
       stack: error?.stack || (new Error()).stack,
-      category: context.category || ERROR_CATEGORIES.UNKNOWN,
-      severity: context.severity || ERROR_SEVERITY.MEDIUM,
+      category: context.category || fallbackErrorCategories.UNKNOWN,
+      severity: context.severity || 'medium',
       context: { url: location.href, userAgent: navigator.userAgent, ...context }
     };
     console.error('[Focus Forest Error]', JSON.stringify(trace, null, 2));
     return trace;
   }
-  function wrapWithErrorBoundary(fn, context = {}) {
+  function fallbackWrapWithErrorBoundary(fn, context = {}) {
     const shouldRethrow = context.rethrow !== false && !context.swallow;
     return async (...args) => {
       try { return await fn(...args); }
       catch (error) {
-        logError(error, { ...context, category: context.category || ERROR_CATEGORIES.UNKNOWN });
+        fallbackLogError(error, { ...context, category: context.category || fallbackErrorCategories.UNKNOWN });
         if (shouldRethrow) throw error;
         return undefined;
       }
     };
   }
-  async function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
+
+  function initContentScript() {
+    // Try to use shared error-tracing module, fall back to local implementations
+    let logError = fallbackLogError;
+    let wrapWithErrorBoundary = fallbackWrapWithErrorBoundary;
+    let ERROR_CATEGORIES = fallbackErrorCategories;
+
+    import('../shared/error-tracing.js').then(({ logError: sharedLogError, wrapWithErrorBoundary: sharedWrap, ERROR_CATEGORIES: sharedCategories }) => {
+      logError = sharedLogError;
+      wrapWithErrorBoundary = sharedWrap;
+      ERROR_CATEGORIES = sharedCategories;
+      // Re-initialize with shared modules if needed for dynamic behavior
+    }).catch((error) => {
+      console.error('[Focus Forest] Failed to load error-tracing module:', error);
+    });
+
+    async function send(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 
   // Root host: pointer-events:none so the page behind stays fully interactive.
   // Only specific children (the chip, the choice card) opt back in with auto.
@@ -271,4 +286,7 @@
   safeLoadSettings();
   safeRefresh(true);
   safeScheduleWatch();
+}
+
+initContentScript();
 })();
