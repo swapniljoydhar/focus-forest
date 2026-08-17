@@ -93,8 +93,7 @@ function renderWeeklyChart(weeklyData) {
     fallback.style.padding = '1rem';
     fallback.style.opacity = '0.7';
     fallback.textContent = `Chart library unavailable. Data: ${JSON.stringify(weeklyData)}`;
-    ctx.parentElement.innerHTML = '';
-    ctx.parentElement.appendChild(fallback);
+    ctx.parentElement.replaceChildren(fallback);
   }
 }
 
@@ -124,8 +123,7 @@ function renderDomainChart(domainData) {
     fallback.style.padding = '1rem';
     fallback.style.opacity = '0.7';
     fallback.textContent = `Chart library unavailable. Top domains: ${domainData.slice(0,3).map(d=>d.domain).join(', ')}`;
-    ctx.parentElement.innerHTML = '';
-    ctx.parentElement.appendChild(fallback);
+    ctx.parentElement.replaceChildren(fallback);
   }
 }
 
@@ -140,12 +138,11 @@ function renderHistoryTable(history) {
     td.className = 'empty-state';
     td.textContent = 'No sessions recorded yet.';
     tr.appendChild(td);
-    tbody.innerHTML = '';
-    tbody.appendChild(tr);
+    tbody.replaceChildren(tr);
     return;
   }
 
-  tbody.innerHTML = '';
+  tbody.replaceChildren();
   history.slice(0, 10).forEach(session => {
     const tr = document.createElement('tr');
     
@@ -176,7 +173,7 @@ function renderSavedItems(items) {
   const container = document.getElementById('savedList');
   if (!container) return;
 
-  container.innerHTML = '';
+  container.replaceChildren();
 
   if (!items || items.length === 0) {
     const empty = document.createElement('div');
@@ -234,7 +231,8 @@ function renderSavedItems(items) {
   });
 }
 
-// Simple HTML escape to prevent XSS
+// Simple HTML escape to prevent XSS - not used since we use textContent everywhere
+// Kept for reference but deprecated
 function escapeHtml(str) {
   if (!str) return '';
   const div = document.createElement('div');
