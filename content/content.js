@@ -280,7 +280,18 @@
     }, WATCH_INTERVAL);
   }
 
-  const onNavigation = () => { if (location.href !== lastUrl) { lastUrl = location.href; choiceCard.removeAttribute('data-shown-for'); safeRefresh(true); } };
+  // Debounced navigation handler to prevent rapid-fire state updates during SPA transitions
+  let navDebounceTimer = null;
+  const onNavigation = () => {
+    if (navDebounceTimer) window.clearTimeout(navDebounceTimer);
+    navDebounceTimer = window.setTimeout(() => {
+      if (location.href !== lastUrl) {
+        lastUrl = location.href;
+        choiceCard.removeAttribute('data-shown-for');
+        safeRefresh(true);
+      }
+    }, 150); // 150ms debounce window
+  };
   const safeOnNavigation = wrapWithErrorBoundary(onNavigation, { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'onNavigation', swallow: true });
   window.addEventListener('popstate', safeOnNavigation, { passive: true });
   window.addEventListener('pageshow', wrapWithErrorBoundary(() => safeRefresh(false), { category: ERROR_CATEGORIES.CONTENT_SCRIPT, function: 'pageshow', swallow: true }), { passive: true });

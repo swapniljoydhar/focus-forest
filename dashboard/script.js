@@ -231,15 +231,6 @@ function renderSavedItems(items) {
   });
 }
 
-// Simple HTML escape to prevent XSS - not used since we use textContent everywhere
-// Kept for reference but deprecated
-function escapeHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 // Export data functionality
 async function exportData() {
   try {
