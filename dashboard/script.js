@@ -3,8 +3,6 @@
  * Handles charts, stats aggregation, and the "Save for Later" queue.
  */
 
-import { generateTreeSVG } from './tree-generator.js';
-
 // Safe DOM helper to prevent XSS
 function safeTextContent(element, text) {
   if (element) {
@@ -154,33 +152,6 @@ function renderHistoryTable(history) {
     const tdDate = document.createElement('td');
     tdDate.textContent = formatDate(session.timestamp);
     tr.appendChild(tdDate);
-    
-    // Tree Visualization Cell
-    const tdTree = document.createElement('td');
-    tdTree.style.width = '220px';
-    tdTree.style.verticalAlign = 'middle';
-    try {
-      // Generate procedural tree SVG
-      const treeSVG = generateTreeSVG(
-        session.duration || 0, 
-        session.domain || 'unknown', 
-        session.timestamp || Date.now()
-      );
-      // Safe to use innerHTML here because generateTreeSVG only uses controlled inputs
-      // (numbers, hardcoded strings, and domain names that are escaped in SVG text contexts)
-      tdTree.innerHTML = treeSVG;
-    } catch (err) {
-      console.warn('Tree generation failed, using fallback:', err);
-      // Fallback to simple colored circle if generation fails
-      const fallbackDiv = document.createElement('div');
-      fallbackDiv.style.width = '50px';
-      fallbackDiv.style.height = '50px';
-      fallbackDiv.style.borderRadius = '50%';
-      fallbackDiv.style.backgroundColor = '#10b981';
-      fallbackDiv.style.opacity = '0.5';
-      tdTree.appendChild(fallbackDiv);
-    }
-    tr.appendChild(tdTree);
     
     const tdDomain = document.createElement('td');
     tdDomain.textContent = session.domain || 'Unknown';
