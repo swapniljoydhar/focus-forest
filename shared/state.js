@@ -1,8 +1,13 @@
-﻿export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
+﻿// Import error tracing for quota monitoring logs
+import { logError, logWarning, logCritical, ERROR_CATEGORIES } from './error-tracing.js';
+
+export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
 export const STORAGE_KEY = 'focusForestState';
 export const SCHEMA_VERSION = 2;
 export const LIMITS = { SESSIONS: 12, NODES_PER_SESSION: 96, EVENTS_PER_SESSION: 72, COMPOST: 80, TITLE: 120, URL: 1024 };
 export const DEFAULT_SETTINGS = { gentleDepth: 4, choiceDepth: 5, ambientMotion: true, growthAnimationTrigger: 'mission-origin' };
+export const STORAGE_QUOTA_WARNING_THRESHOLD = 4 * 1024 * 1024; // 4MB warning threshold
+export const STORAGE_QUOTA_CRITICAL_THRESHOLD = 7 * 1024 * 1024; // 7MB critical threshold (Chrome's limit is ~8MB)
 
 export function emptyState() {
   return { schemaVersion: SCHEMA_VERSION, activeSessionId: null, sessions: [], compostItems: [], settings: { interventionsPaused: false, ...DEFAULT_SETTINGS } };
@@ -124,6 +129,35 @@ export function normalizeSettings(value, fallback = emptyState().settings) {
 let stateCache = null;
 let ownWritesInFlight = 0;
 
+/**
+ * Check storage quota usage and return status with warning flag
+ * @returns {Promise<{bytesInUse: number, warning: boolean, critical: boolean} | null>}
+ */
+export async function checkStorageQuota() {
+  try {
+    const bytesInUse = await chrome.storage.local.getBytesInUse();
+    const warning = bytesInUse > STORAGE_QUOTA_WARNING_THRESHOLD;
+    const critical = bytesInUse > STORAGE_QUOTA_CRITICAL_THRESHOLD;
+    if (critical) {
+      logCritical(new Error('Storage quota critically exceeded'), { 
+        category: ERROR_CATEGORIES.STORAGE, 
+        bytesInUse,
+        threshold: STORAGE_QUOTA_CRITICAL_THRESHOLD 
+      });
+    } else if (warning) {
+      logWarning(new Error('Storage approaching quota'), { 
+        category: ERROR_CATEGORIES.STORAGE, 
+        bytesInUse,
+        threshold: STORAGE_QUOTA_WARNING_THRESHOLD 
+      });
+    }
+    return { bytesInUse, warning, critical };
+  } catch (error) {
+    logError(error, { category: ERROR_CATEGORIES.STORAGE, operation: 'getBytesInUse' });
+    return null;
+  }
+}
+
 export async function loadState() {
   if (stateCache !== null) return stateCache;
   try {
@@ -158,5 +192,18 @@ export function clearStateCache() {
 if (typeof chrome !== 'undefined' && chrome.storage?.onChanged?.addListener) {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[STORAGE_KEY] && ownWritesInFlight === 0) stateCache = null;
+  });
+}
+
+// Periodic storage quota check every 5 minutes to catch gradual accumulation
+// Only runs in service worker context where chrome.alarms is available
+if (typeof chrome !== 'undefined' && chrome.alarms) {
+  chrome.alarms.create('storageQuotaCheck', { periodInMinutes: 5 });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'storageQuotaCheck') {
+      checkStorageQuota().catch((error) => {
+        logError(error, { category: ERROR_CATEGORIES.STORAGE, operation: 'periodicQuotaCheck' });
+      });
+    }
   });
 }

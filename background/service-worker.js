@@ -1,4 +1,4 @@
-import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState } from '../shared/state.js';
+import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota } from '../shared/state.js';
 import { logError, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
@@ -389,6 +389,8 @@ chrome.runtime.onInstalled.addListener(() => {
   wrapWithErrorBoundary(async () => {
     const result = await chrome.storage.local.get(STORAGE_KEY);
     if (!result[STORAGE_KEY]) await saveState(emptyState());
+    // Check initial storage quota after seeding
+    await checkStorageQuota();
   }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled', swallow: true })();
 });
 
@@ -426,6 +428,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'REMOVE_SAVED_ITEM': return isExtensionPageSender(sender) && safeId(message.id) ? removeSavedItem(message.id) : null;
       case 'EXPORT_DATA': return isExtensionPageSender(sender) ? exportAllData() : null;
       case 'CLEAR_ALL_DATA': return isExtensionPageSender(sender) ? replaceState(emptyState()) : null;
+      case 'CHECK_STORAGE_QUOTA': return isExtensionPageSender(sender) ? await checkStorageQuota() : null;
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
         // Never navigate a live tab to the chrome://newtab placeholder; if no real
@@ -470,7 +473,8 @@ const SCHEMAS = {
   REMOVE_SAVED_ITEM: { id: 'string' },
   EXPORT_DATA: {},
   CLEAR_ALL_DATA: {},
-  GO_HOME: {}
+  GO_HOME: {},
+  CHECK_STORAGE_QUOTA: {}
 };
 const TYPE_CHECKS = {
   string: (v) => typeof v === 'string',
