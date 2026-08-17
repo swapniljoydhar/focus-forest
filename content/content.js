@@ -1,5 +1,12 @@
 (() => {
   if (location.protocol === 'chrome-extension:' || location.protocol === 'chrome:' || location.protocol === 'edge:') return;
+  
+  // --- Resilience: Prevent Duplicate Injection ---
+  if (window.__focusForestInjected) {
+    console.warn('[Focus Forest] Duplicate injection detected; skipping.');
+    return;
+  }
+  window.__focusForestInjected = true;
 
   // Fallback implementations in case module loading fails
   const fallbackErrorCategories = { CONTENT_SCRIPT: 'content_script', MESSAGING: 'messaging', UI_RENDER: 'ui_render', UNKNOWN: 'unknown' };
