@@ -23,7 +23,7 @@ async function init() {
       resumeBtn.hidden = false;
       resumeBtn.querySelector('.action-text').textContent = `Continue Session · "${snap.session.mission}"`;
     }
-  } catch (err) {}
+  } catch (err) { logError(err, { category: ERROR_CATEGORIES.MESSAGING, function: 'init' }); }
   setTimeout(() => input.focus(), 300);
 }
 
