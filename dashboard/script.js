@@ -159,6 +159,14 @@ function renderDomainChart(domainData) {
   const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'];
   const cx = 150; const cy = 125; const r = 90; const innerR = 50;
   const total = domainData.reduce((sum, d) => sum + d.count, 0);
+  if (total <= 0) {
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '200'); text.setAttribute('y', '125');
+    text.setAttribute('text-anchor', 'middle'); text.setAttribute('fill', '#6b7280');
+    text.setAttribute('font-size', '14'); text.textContent = 'No data yet.';
+    svg.append(text);
+    return;
+  }
   let angle = -Math.PI / 2;
 
   domainData.forEach((d, i) => {
@@ -303,15 +311,6 @@ function renderSavedItems(items) {
   });
 }
 
-// Simple HTML escape to prevent XSS - not used since we use textContent everywhere
-// Kept for reference but deprecated
-function escapeHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
-
 // Export data functionality
 async function exportData() {
   try {
@@ -338,21 +337,7 @@ async function exportData() {
 // Reset data functionality — uses the care dialog from app.js if available,
 // otherwise falls back to a local inline confirmation.
 async function resetData() {
-  // Try to use the garden's care dialog if we're embedded in the same page
-  const careDialog = document.getElementById('care-dialog');
-  if (careDialog) {
-    // Delegate to the main dashboard's care dialog system
-    document.querySelector('#care-dialog-title').textContent = 'Clear every garden?';
-    document.querySelector('#care-dialog-copy').textContent = 'This removes all local gardens, trail notes, and saved curiosities from this device. Nothing is sent anywhere.';
-    document.querySelector('#care-confirm').textContent = 'Clear local data';
-    careDialog.hidden = false;
-    document.querySelector('#care-confirm').focus();
-    // Store action for the confirm handler
-    careDialog.dataset.pendingAction = 'clear-stats';
-    return;
-  }
-
-  // Fallback: create a simple inline dialog
+  // Create a calm inline dialog (matching extension's UX philosophy)
   const backdrop = document.createElement('div');
   backdrop.className = 'care-dialog-backdrop';
   backdrop.setAttribute('role', 'dialog');
@@ -370,11 +355,13 @@ async function resetData() {
   backdrop.append(dialog);
   document.body.append(backdrop);
 
-  cancelBtn.addEventListener('click', () => backdrop.remove());
-  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
-  document.addEventListener('keydown', function handler(e) {
-    if (e.key === 'Escape') { backdrop.remove(); document.removeEventListener('keydown', handler); }
-  });
+  cancelBtn.addEventListener('click', () => { cleanup(); backdrop.remove(); });
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) { cleanup(); backdrop.remove(); } });
+  function onKeydown(e) {
+    if (e.key === 'Escape') { cleanup(); backdrop.remove(); }
+  }
+  function cleanup() { document.removeEventListener('keydown', onKeydown); }
+  document.addEventListener('keydown', onKeydown);
   confirmBtn.addEventListener('click', async () => {
     backdrop.remove();
     try {
