@@ -191,9 +191,11 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId, windowId) {
   const url = safeHttpUrl(rawUrl);
   const title = compactText(rawTitle || url);
   return mutate((state) => {
-    const session = activeSession(state); if (!session || !url || url.startsWith('chrome://') || url.startsWith('chrome-extension://')) return NO_CHANGE;
+    const session = activeSession(state); if (!session || !url || url.startsWith('chrome://')) return NO_CHANGE;
     const current = nodeForTab(session, tabId);
-    const originNotSet = session.origin?.url === 'chrome://newtab' || session.nodes.length === 1 && !session.nodes[0].url.startsWith('http');
+    // Origin is "not set" if it's still the newtab placeholder (either chrome:// or chrome-extension://)
+    const originUrl = session.origin?.url || '';
+    const originNotSet = /^chrome:\/\/newtab(?:\/|$)/i.test(originUrl) || /^chrome-extension:\/\/[^/]*\/newtab\//i.test(originUrl) || session.nodes.length === 1 && !session.nodes[0].url.startsWith('http');
     if (originNotSet) {
       const root = session.nodes[0] || session.nodes.at(-1);
       if (root) { attachTab(root, tabId); root.url = url; root.title = title; root.firstSeenAt = Date.now(); root.relationshipConfidence = 'direct'; }
@@ -443,9 +445,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'CHECK_STORAGE_QUOTA': return isExtensionPageSender(sender) ? await checkStorageQuota() : null;
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
-        // Never navigate a live tab to the chrome://newtab placeholder; if no real
-        // HTTP(S) origin was ever recorded, open a fresh new-tab experience instead.
-        const hasRealOrigin = Boolean(returnUrl) && !/^chrome:\/\/newtab(?:\/|$)/i.test(returnUrl);
+        // Only treat HTTP(S) origins as real navigation targets.
+        // Extension pages and chrome:// URLs are not useful "go home" destinations.
+        const hasRealOrigin = Boolean(returnUrl) && /^https?:\/\//i.test(returnUrl);
         let returnedToOrigin = false;
         if (originTabId && hasRealOrigin) {
           try {
