@@ -10,6 +10,25 @@ function safeTextContent(element, text) {
   }
 }
 
+// Status message helper (replaces alert/confirm)
+function showStatusMessage(text, isError = false) {
+  let statusEl = document.getElementById('stats-status');
+  if (!statusEl) {
+    statusEl = document.createElement('div');
+    statusEl.id = 'stats-status';
+    statusEl.setAttribute('role', 'status');
+    statusEl.setAttribute('aria-live', 'polite');
+    statusEl.style.cssText = 'padding:0.75rem;margin:1rem 0;border-radius:8px;text-align:center;font-size:0.875rem;';
+    const container = document.querySelector('.dashboard-container');
+    if (container) container.prepend(statusEl);
+  }
+  statusEl.textContent = text;
+  statusEl.style.background = isError ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)';
+  statusEl.style.color = isError ? '#dc2626' : '#059669';
+  statusEl.style.display = 'block';
+  setTimeout(() => { statusEl.style.display = 'none'; }, 4000);
+}
+
 // Format duration in seconds to human readable string
 function formatDuration(seconds) {
   if (seconds < 60) return `${seconds}s`;
@@ -59,72 +78,125 @@ async function loadDashboardStats() {
   }
 }
 
-// Lightweight custom chart renderer (fallback if Chart.js not available)
+// Lightweight SVG bar chart (no external dependencies)
 function renderWeeklyChart(weeklyData) {
-  const ctx = document.getElementById('weeklyChart');
-  if (!ctx) return;
+  const svg = document.getElementById('weeklyChart');
+  if (!svg) return;
+  svg.replaceChildren();
 
-  // Check if Chart.js is loaded
-  if (typeof Chart !== 'undefined') {
-    new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels: weeklyData.map(d => d.day),
-        datasets: [{
-          label: 'Focus Minutes',
-          data: weeklyData.map(d => d.minutes),
-          backgroundColor: '#10b981',
-          borderRadius: 4
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          y: { beginAtZero: true, grid: { color: '#e5e7eb' } },
-          x: { grid: { display: false } }
-        }
-      }
-    });
-  } else {
-    // Fallback simple text representation if library fails
-    const fallback = document.createElement('div');
-    fallback.style.padding = '1rem';
-    fallback.style.opacity = '0.7';
-    fallback.textContent = `Chart library unavailable. Data: ${JSON.stringify(weeklyData)}`;
-    ctx.parentElement.replaceChildren(fallback);
+  if (!weeklyData || !weeklyData.length) {
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '200'); text.setAttribute('y', '125');
+    text.setAttribute('text-anchor', 'middle'); text.setAttribute('fill', '#6b7280');
+    text.setAttribute('font-size', '14'); text.textContent = 'No data yet.';
+    svg.append(text);
+    return;
   }
+
+  const maxVal = Math.max(1, ...weeklyData.map(d => d.minutes));
+  const barW = 36; const gap = 16; const chartH = 180; const chartY = 220;
+  const totalW = weeklyData.length * (barW + gap) - gap;
+  const startX = (400 - totalW) / 2;
+
+  // Grid lines
+  for (let i = 0; i <= 4; i++) {
+    const y = chartY - (chartH * i / 4);
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', '30'); line.setAttribute('y1', String(y));
+    line.setAttribute('x2', '370'); line.setAttribute('y2', String(y));
+    line.setAttribute('stroke', '#e5e7eb'); line.setAttribute('stroke-width', '1');
+    svg.append(line);
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', '25'); label.setAttribute('y', String(y + 4));
+    label.setAttribute('text-anchor', 'end'); label.setAttribute('fill', '#9ca3af');
+    label.setAttribute('font-size', '10'); label.textContent = String(Math.round(maxVal * i / 4));
+    svg.append(label);
+  }
+
+  weeklyData.forEach((d, i) => {
+    const x = startX + i * (barW + gap);
+    const barH = (d.minutes / maxVal) * chartH;
+    const y = chartY - barH;
+
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', String(x)); rect.setAttribute('y', String(y));
+    rect.setAttribute('width', String(barW)); rect.setAttribute('height', String(barH));
+    rect.setAttribute('rx', '4'); rect.setAttribute('fill', '#10b981');
+    svg.append(rect);
+
+    if (d.minutes > 0) {
+      const val = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      val.setAttribute('x', String(x + barW / 2)); val.setAttribute('y', String(y - 6));
+      val.setAttribute('text-anchor', 'middle'); val.setAttribute('fill', '#374151');
+      val.setAttribute('font-size', '11'); val.setAttribute('font-weight', '600');
+      val.textContent = String(d.minutes);
+      svg.append(val);
+    }
+
+    const lbl = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    lbl.setAttribute('x', String(x + barW / 2)); lbl.setAttribute('y', String(chartY + 16));
+    lbl.setAttribute('text-anchor', 'middle'); lbl.setAttribute('fill', '#6b7280');
+    lbl.setAttribute('font-size', '11'); lbl.textContent = d.day;
+    svg.append(lbl);
+  });
 }
 
+// Lightweight SVG doughnut chart (no external dependencies)
 function renderDomainChart(domainData) {
-  const ctx = document.getElementById('domainChart');
-  if (!ctx) return;
+  const svg = document.getElementById('domainChart');
+  if (!svg) return;
+  svg.replaceChildren();
 
-  if (typeof Chart !== 'undefined') {
-    new Chart(ctx, {
-      type: 'doughnut',
-      data: {
-        labels: domainData.map(d => d.domain),
-        datasets: [{
-          data: domainData.map(d => d.count),
-          backgroundColor: ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'],
-          borderWidth: 0
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { position: 'right' } }
-      }
-    });
-  } else {
-    const fallback = document.createElement('div');
-    fallback.style.padding = '1rem';
-    fallback.style.opacity = '0.7';
-    fallback.textContent = `Chart library unavailable. Top domains: ${domainData.slice(0,3).map(d=>d.domain).join(', ')}`;
-    ctx.parentElement.replaceChildren(fallback);
+  if (!domainData || !domainData.length) {
+    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', '200'); text.setAttribute('y', '125');
+    text.setAttribute('text-anchor', 'middle'); text.setAttribute('fill', '#6b7280');
+    text.setAttribute('font-size', '14'); text.textContent = 'No data yet.';
+    svg.append(text);
+    return;
   }
+
+  const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444'];
+  const cx = 150; const cy = 125; const r = 90; const innerR = 50;
+  const total = domainData.reduce((sum, d) => sum + d.count, 0);
+  let angle = -Math.PI / 2;
+
+  domainData.forEach((d, i) => {
+    const sliceAngle = (d.count / total) * 2 * Math.PI;
+    const x1 = cx + r * Math.cos(angle); const y1 = cy + r * Math.sin(angle);
+    const x2 = cx + r * Math.cos(angle + sliceAngle); const y2 = cy + r * Math.sin(angle + sliceAngle);
+    const ix1 = cx + innerR * Math.cos(angle); const iy1 = cy + innerR * Math.sin(angle);
+    const ix2 = cx + innerR * Math.cos(angle + sliceAngle); const iy2 = cy + innerR * Math.sin(angle + sliceAngle);
+    const large = sliceAngle > Math.PI ? 1 : 0;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M${x1.toFixed(2)} ${y1.toFixed(2)} A${r} ${r} 0 ${large} 1 ${x2.toFixed(2)} ${y2.toFixed(2)} L${ix2.toFixed(2)} ${iy2.toFixed(2)} A${innerR} ${innerR} 0 ${large} 0 ${ix1.toFixed(2)} ${iy1.toFixed(2)} Z`);
+    path.setAttribute('fill', colors[i % colors.length]);
+    svg.append(path);
+    angle += sliceAngle;
+  });
+
+  // Legend
+  domainData.forEach((d, i) => {
+    const ly = 60 + i * 28;
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('x', '290'); rect.setAttribute('y', String(ly));
+    rect.setAttribute('width', '14'); rect.setAttribute('height', '14');
+    rect.setAttribute('rx', '3'); rect.setAttribute('fill', colors[i % colors.length]);
+    svg.append(rect);
+
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', '310'); label.setAttribute('y', String(ly + 11));
+    label.setAttribute('fill', '#374151'); label.setAttribute('font-size', '12');
+    label.textContent = d.domain.length > 18 ? d.domain.slice(0, 17) + '…' : d.domain;
+    svg.append(label);
+
+    const count = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    count.setAttribute('x', '390'); count.setAttribute('y', String(ly + 11));
+    count.setAttribute('text-anchor', 'end'); count.setAttribute('fill', '#6b7280');
+    count.setAttribute('font-size', '11'); count.textContent = String(d.count);
+    svg.append(count);
+  });
 }
 
 function renderHistoryTable(history) {
@@ -259,21 +331,61 @@ async function exportData() {
     URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Export failed:', error);
-    alert('Failed to export data. Check console for details.');
+    showStatusMessage('Failed to export data. Please try again.', true);
   }
 }
 
-// Reset data functionality
+// Reset data functionality — uses the care dialog from app.js if available,
+// otherwise falls back to a local inline confirmation.
 async function resetData() {
-  if (!confirm('Are you sure you want to clear all local data? This cannot be undone.')) return;
-  
-  try {
-    await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
-    window.location.reload();
-  } catch (error) {
-    console.error('Reset failed:', error);
-    alert('Failed to reset data.');
+  // Try to use the garden's care dialog if we're embedded in the same page
+  const careDialog = document.getElementById('care-dialog');
+  if (careDialog) {
+    // Delegate to the main dashboard's care dialog system
+    document.querySelector('#care-dialog-title').textContent = 'Clear every garden?';
+    document.querySelector('#care-dialog-copy').textContent = 'This removes all local gardens, trail notes, and saved curiosities from this device. Nothing is sent anywhere.';
+    document.querySelector('#care-confirm').textContent = 'Clear local data';
+    careDialog.hidden = false;
+    document.querySelector('#care-confirm').focus();
+    // Store action for the confirm handler
+    careDialog.dataset.pendingAction = 'clear-stats';
+    return;
   }
+
+  // Fallback: create a simple inline dialog
+  const backdrop = document.createElement('div');
+  backdrop.className = 'care-dialog-backdrop';
+  backdrop.setAttribute('role', 'dialog');
+  backdrop.setAttribute('aria-modal', 'true');
+  const dialog = document.createElement('section');
+  dialog.className = 'care-dialog';
+  const eyebrow = document.createElement('p'); eyebrow.className = 'eyebrow'; eyebrow.textContent = 'A QUIET DECISION';
+  const title = document.createElement('h2'); title.textContent = 'Clear every garden?';
+  const copy = document.createElement('p'); copy.textContent = 'This removes all local gardens, trail notes, and saved curiosities from this device. Nothing is sent anywhere.';
+  const actions = document.createElement('div'); actions.className = 'care-dialog-actions';
+  const cancelBtn = document.createElement('button'); cancelBtn.className = 'detail-button quiet'; cancelBtn.type = 'button'; cancelBtn.textContent = 'Keep it';
+  const confirmBtn = document.createElement('button'); confirmBtn.className = 'detail-button'; confirmBtn.type = 'button'; confirmBtn.textContent = 'Clear local data';
+  actions.append(cancelBtn, confirmBtn);
+  dialog.append(eyebrow, title, copy, actions);
+  backdrop.append(dialog);
+  document.body.append(backdrop);
+
+  cancelBtn.addEventListener('click', () => backdrop.remove());
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  document.addEventListener('keydown', function handler(e) {
+    if (e.key === 'Escape') { backdrop.remove(); document.removeEventListener('keydown', handler); }
+  });
+  confirmBtn.addEventListener('click', async () => {
+    backdrop.remove();
+    try {
+      await chrome.runtime.sendMessage({ type: 'CLEAR_ALL_DATA' });
+      window.location.reload();
+    } catch (error) {
+      console.error('Reset failed:', error);
+      showStatusMessage('Failed to reset data. Please try again.', true);
+    }
+  });
+  confirmBtn.focus();
 }
 
 // Initialize dashboard

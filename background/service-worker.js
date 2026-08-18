@@ -275,10 +275,10 @@ async function getDashboardStats() {
   const domainCounts = {};
   const dailyMinutes = {};
   
-  // Initialize last 7 days
+  // Initialize last 7 days using ISO date keys (not weekday names)
   for (let i = 6; i >= 0; i--) {
     const date = new Date(now - (i * oneDayMs));
-    const key = date.toLocaleDateString(undefined, { weekday: 'short' });
+    const key = date.toISOString().slice(0, 10); // YYYY-MM-DD
     dailyMinutes[key] = 0;
   }
 
@@ -286,18 +286,13 @@ async function getDashboardStats() {
   for (const session of state.sessions) {
     totalSessions++;
     
-    // Calculate session duration from events
-    let sessionDuration = 0;
-    const sessionStart = session.createdAt || now;
+    // Use session duration from startedAt to endedAt (not sum of node durations
+    // which double-counts concurrent tabs)
+    const sessionStart = session.startedAt || now;
     const sessionEnd = session.endedAt || now;
+    const sessionDuration = Math.max(0, (sessionEnd - sessionStart) / 1000);
     
     for (const node of session.nodes) {
-      if (node.firstSeenAt && node.closedAt) {
-        sessionDuration += (node.closedAt - node.firstSeenAt) / 1000;
-      } else if (node.firstSeenAt) {
-        sessionDuration += (now - node.firstSeenAt) / 1000;
-      }
-      
       // Domain counting
       try {
         const hostname = new URL(node.url).hostname.toLowerCase();
@@ -307,27 +302,46 @@ async function getDashboardStats() {
     
     totalFocusTime += sessionDuration;
     
-    // Daily breakdown
-    const dayKey = new Date(sessionStart).toLocaleDateString(undefined, { weekday: 'short' });
-    if (dailyMinutes.hasOwnProperty(dayKey)) {
+    // Daily breakdown using ISO date key
+    const dayKey = new Date(sessionStart).toISOString().slice(0, 10);
+    if (Object.hasOwn(dailyMinutes, dayKey)) {
       dailyMinutes[dayKey] += Math.floor(sessionDuration / 60);
     }
   }
 
-  // Calculate streak
+  // Calculate streak: consecutive days with activity, counting backward from today
   let currentStreak = 0;
   for (let i = 0; i < 365; i++) {
     const checkDate = new Date(now - (i * oneDayMs));
-    const dayKey = checkDate.toLocaleDateString(undefined, { weekday: 'short' });
-    if (dailyMinutes[dayKey] > 0) {
-      currentStreak++;
-    } else if (i > 0) {
-      break;
+    const dayKey = checkDate.toISOString().slice(0, 10);
+    // For days within our 7-day window, check the dailyMinutes map
+    // For older days, scan sessions directly
+    if (i < 7) {
+      if (dailyMinutes[dayKey] > 0) {
+        currentStreak++;
+      } else if (i > 0) {
+        break;
+      }
+    } else {
+      const dayStart = new Date(dayKey).getTime();
+      const dayEnd = dayStart + oneDayMs;
+      const hadActivity = state.sessions.some((s) => {
+        const start = s.startedAt || 0;
+        return start >= dayStart && start < dayEnd;
+      });
+      if (hadActivity) {
+        currentStreak++;
+      } else {
+        break;
+      }
     }
   }
 
-  // Format weekly data
-  const weeklyData = Object.entries(dailyMinutes).map(([day, minutes]) => ({ day, minutes }));
+  // Format weekly data with readable day labels
+  const weeklyData = Object.entries(dailyMinutes).map(([dateKey, minutes]) => {
+    const date = new Date(dateKey + 'T12:00:00');
+    return { day: date.toLocaleDateString(undefined, { weekday: 'short' }), date: dateKey, minutes };
+  });
 
   // Format domain data (top 5)
   const domainData = Object.entries(domainCounts)
@@ -337,14 +351,12 @@ async function getDashboardStats() {
 
   // Recent history (last 10 sessions)
   const history = state.sessions.slice(-10).reverse().map(session => {
-    const duration = session.nodes.reduce((acc, node) => {
-      if (node.firstSeenAt && node.closedAt) return acc + (node.closedAt - node.firstSeenAt);
-      if (node.firstSeenAt) return acc + (now - node.firstSeenAt);
-      return acc;
-    }, 0) / 1000;
+    const start = session.startedAt || now;
+    const end = session.endedAt || now;
+    const duration = Math.max(0, (end - start) / 1000);
     
     return {
-      timestamp: session.createdAt || now,
+      timestamp: start,
       domain: session.origin?.url ? (() => { try { return new URL(session.origin.url).hostname; } catch { return 'Unknown'; } })() : 'Unknown',
       duration: Math.floor(duration),
       type: 'focus'
@@ -423,11 +435,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'DELETE_COMPOST': return isExtensionPageSender(sender) && safeId(message.id) ? mutate((state) => { const before = state.compostItems.length; state.compostItems = state.compostItems.filter((item) => item.id !== message.id); return before === state.compostItems.length ? NO_CHANGE : state.compostItems; }) : null;
       case 'PRUNE_NODE': return isExtensionPageSender(sender) && safeId(message.sessionId) && safeId(message.nodeId) ? pruneNode(message.sessionId, message.nodeId, Boolean(message.toCompost)) : null;
       case 'DELETE_SESSION': return isExtensionPageSender(sender) && safeId(message.sessionId) ? mutate((state) => { const before = state.sessions.length; state.sessions = state.sessions.filter((session) => session.id !== message.sessionId); if (state.activeSessionId === message.sessionId) state.activeSessionId = null; return before === state.sessions.length ? NO_CHANGE : state.sessions; }) : null;
-      case 'CLEAR_DATA': return isExtensionPageSender(sender) ? replaceState(emptyState()) : null;
+      case 'CLEAR_DATA':
+      case 'CLEAR_ALL_DATA': return isExtensionPageSender(sender) ? replaceState(emptyState()) : null;
       case 'GET_DASHBOARD_STATS': return isExtensionPageSender(sender) ? getDashboardStats() : null;
       case 'REMOVE_SAVED_ITEM': return isExtensionPageSender(sender) && safeId(message.id) ? removeSavedItem(message.id) : null;
       case 'EXPORT_DATA': return isExtensionPageSender(sender) ? exportAllData() : null;
-      case 'CLEAR_ALL_DATA': return isExtensionPageSender(sender) ? replaceState(emptyState()) : null;
       case 'CHECK_STORAGE_QUOTA': return isExtensionPageSender(sender) ? await checkStorageQuota() : null;
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);

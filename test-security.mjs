@@ -49,7 +49,7 @@ assert.match(worker, /safeOriginUrl\(value\) \{ return safeSessionUrl\(value\) \
 assert.match(worker, /function safeNavigationUrl\(value\) \{ return safeSessionUrl\(value\); \}/, 'Go Home navigation must use the current-extension-aware URL helper');
 assert.equal(worker.includes('chrome-extension://[a-z0-9-]+/'), false, 'service worker must not accept arbitrary extension IDs in navigation URLs');
 assert.match(content, /showGrowthRitual/, 'companion branch growth should use an explicit bounded ritual');
-assert.match(content, /ff-growth-ritual/, 'companion ritual should have a named visual state');
+assert.match(content, /chip-growth-ritual/, 'companion ritual should have a named visual state');
 assert.match(content, /waitForGrowth\(1200/, 'companion ritual should hold the completion grow phase for ~1.2s before flicker');
 assert.match(content, /prefers-reduced-motion/, 'companion ritual should respect reduced-motion preferences');
 assert.match(content, /let originRitualPlayed = false;\s*try \{ originRitualPlayed = sessionStorage\.getItem/, 'initial sessionStorage access must be guarded');

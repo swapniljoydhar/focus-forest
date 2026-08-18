@@ -15,10 +15,12 @@ function mulberry32(a) {
   }
 }
 
-// Create a seed from session data
+// Create a seed from session data (sanitize domain to prevent injection)
 function createSeed(duration, domain, timestamp) {
+  // Strip any non-alphanumeric characters from domain to prevent injection
+  const safeDomain = String(domain || '').replace(/[^a-zA-Z0-9.-]/g, '').slice(0, 128);
   let hash = 0;
-  const str = `${duration}-${domain}-${timestamp}`;
+  const str = `${duration}-${safeDomain}-${timestamp}`;
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
@@ -120,7 +122,8 @@ function generateBranchPath(x, y, length, angle, thickness, rand, depth = 0, max
 
 // Main function to generate complete tree SVG with realistic organic structure
 export function generateTreeSVG(duration, domain, timestamp = Date.now()) {
-  const seed = createSeed(duration, domain, timestamp);
+  const safeDomain = String(domain || '').replace(/[^a-zA-Z0-9.-]/g, '').slice(0, 128);
+  const seed = createSeed(duration, safeDomain, timestamp);
   const rand = mulberry32(seed);
   const params = getTreeParams(duration, rand);
   

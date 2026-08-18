@@ -157,34 +157,8 @@
     titleObserver.observe(titleElement, { childList: true, characterData: true });
   }
 
-  // === CHIP INTERFACE UX: Smart auto-hide on scroll, show on pause ===
-  let scrollTimeout = 0;
-  let isChipVisible = true;
-  
-  const hideChip = () => {
-    if (!chip.classList.contains('minimized') && !choiceCard.hidden) return;
-    isChipVisible = false;
-    chip.style.opacity = '0';
-    chip.style.transform = 'translateY(-8px)';
-  };
-  
-  const showChip = () => {
-    isChipVisible = true;
-    chip.style.opacity = '';
-    chip.style.transform = '';
-  };
-
-  window.addEventListener('scroll', wrapWithErrorBoundary(() => {
-    clearTimeout(scrollTimeout);
-    if (!isChipVisible) showChip();
-    scrollTimeout = setTimeout(hideChip, 1500);
-  }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'scrollHandler', swallow: true }));
-
-  // Show chip when user pauses or interacts
-  chip.addEventListener('mouseenter', showChip);
-  chip.addEventListener('mouseleave', () => {
-    scrollTimeout = setTimeout(hideChip, 2000);
-  });
+  // The chip stays visible at all times (per README: "stays quietly available").
+  // It does not auto-hide on scroll. Users can manually minimize via the minimize button.
 
   // --- Drag-to-move the chip (Pointer Events + setPointerCapture) ---
   let chipPos = null;
@@ -226,7 +200,7 @@
     }
   }
 
-  function cancelGrowthRitual() { ritualToken += 1; window.clearTimeout(ritualTimer); ritualTimer = 0; chip.classList.remove('ff-growth-ritual', 'ff-growth-flash'); }
+  function cancelGrowthRitual() { ritualToken += 1; window.clearTimeout(ritualTimer); ritualTimer = 0; chip.classList.remove('chip-growth-ritual', 'chip-growth-flash'); }
   function waitForGrowth(ms, token) { return new Promise((resolve) => { ritualTimer = window.setTimeout(() => resolve(token === ritualToken), ms); }); }
 
   const safeShowGrowthRitual = wrapWithErrorBoundary(showGrowthRitual, { category: ERROR_CATEGORIES.UI_RENDER, function: 'showGrowthRitual' });
@@ -239,16 +213,16 @@
     if (growthAnimationTrigger === 'mission-origin' && originRitualPlayed) return false;
     const token = ++ritualToken;
     window.clearTimeout(ritualTimer);
-    chip.classList.remove('ff-growth-flash');
-    chip.classList.add('ff-growth-ritual');
+    chip.classList.remove('chip-growth-flash');
+    chip.classList.add('chip-growth-ritual');
     stateEl.textContent = 'A branch is growing';
     chip.hidden = false;
     // Tree grows for ~1.2s, then flickers for ~0.5s before notification
     if (!await waitForGrowth(1200, token)) return false;
-    chip.classList.remove('ff-growth-ritual');
-    chip.classList.add('ff-growth-flash');
+    chip.classList.remove('chip-growth-ritual');
+    chip.classList.add('chip-growth-flash');
     if (!await waitForGrowth(540, token)) return false;
-    chip.classList.remove('ff-growth-flash');
+    chip.classList.remove('chip-growth-flash');
     if (isOrigin) {
       originRitualPlayed = true;
       try { sessionStorage.setItem('ff-origin-ritual-played', 'true'); } catch { /* storage may be unavailable */ }

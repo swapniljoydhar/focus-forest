@@ -31,6 +31,7 @@ async function render() {
   document.querySelector('#mission').textContent = session.mission; document.querySelector('#state').textContent = state;
   document.querySelector('#depth-label').textContent = `Deepest branch ${reflection.deepest}`; document.querySelector('#meter-fill').style.width = `${clamp((reflection.deepest / thresholds.INTERRUPT) * 100, 4, 100)}%`;
   document.querySelector('#nodes').textContent = session.nodes.length; document.querySelector('#compost').textContent = snap.state.compostItems.length;
+  document.querySelector('#nodes').textContent = session.nodes.length; document.querySelector('#compost').textContent = snap.state.compostItems.length;
   const pause = document.querySelector('#pause'); pause.textContent = session.interventionPaused ? 'Resume the forest' : 'Pause interventions'; pause.setAttribute('aria-pressed', String(Boolean(session.interventionPaused)));
 }
 

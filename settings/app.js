@@ -1,7 +1,7 @@
 import { logError, wrapWithErrorBoundary, ERROR_CATEGORIES } from '../shared/error-tracing.js';
 
 async function message(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
-const gentle = document.querySelector('#gentle'); const choice = document.querySelector('#choice'); const motion = document.querySelector('#motion'); const growthAnimation = document.querySelector('input[name="growth-animation"]:checked'); const status = document.querySelector('#status'); const save = document.querySelector('#save');
+const gentle = document.querySelector('#gentle'); const choice = document.querySelector('#choice'); const motion = document.querySelector('#motion'); const status = document.querySelector('#status'); const save = document.querySelector('#save');
 const original = { gentleDepth: 4, choiceDepth: 5, ambientMotion: true, growthAnimationTrigger: 'mission-origin' }; let saved = { ...original }; let ready = false;
 function currentSettings() { return { gentleDepth: Number(gentle.value), choiceDepth: Number(choice.value), ambientMotion: motion.checked, growthAnimationTrigger: document.querySelector('input[name="growth-animation"]:checked')?.value || 'mission-origin' }; }
 function markDirty() { if (!ready) return; const dirty = JSON.stringify(currentSettings()) !== JSON.stringify(saved); save.disabled = !dirty; if (dirty) status.textContent = 'You have a rhythm change ready to save.'; }
