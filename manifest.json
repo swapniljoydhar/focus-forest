@@ -12,8 +12,10 @@
   },
   "permissions": [
     "storage",
+    "storage.sync",
     "webNavigation",
-    "alarms"
+    "alarms",
+    "contextMenus"
   ],
   "host_permissions": [
     "http://*/*",
@@ -30,6 +32,14 @@
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
       "48": "icons/icon-48.png"
+    }
+  },
+  "commands": {
+    "toggle-mission": {
+      "suggested_key": {
+        "default": "Alt+F"
+      },
+      "description": "Start or end a focus mission"
     }
   },
   "chrome_url_overrides": {

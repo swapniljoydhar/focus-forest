@@ -29,7 +29,7 @@ class ErrorTrace {
     this.context = {
       url: context.url || (typeof location !== 'undefined' ? location.href : 'background'),
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'service-worker',
-      extensionVersion: '0.2.0',
+      extensionVersion: (typeof chrome !== 'undefined' && chrome.runtime?.getManifest?.()?.version) || 'unknown',
       ...context
     };
     this.rootCause = null;

@@ -227,4 +227,53 @@ tabActions.length = 0; windowActions.length = 0;
 await send({ type: 'GO_HOME' });
 assert.equal(windowActions.some((action) => action[0] === 'update' && action[1] === 2 && action[2].focused === true), true, 'Go Home should focus the origin window');
 
+// Test node close and reopen lifecycle
+await send({ type: 'CLEAR_DATA' });
+await send({ type: 'START_MISSION', mission: 'Node close and reopen lifecycle', tab: { id: 600, url: 'chrome-extension://test/newtab/index.html', title: 'New Tab' } });
+await send({ type: 'OBSERVE_PAGE', url: 'https://lifecycle.example/first', title: 'First page' }, { id: 600 });
+const firstNodeId = session().nodes.at(-1).id;
+await send({ type: 'LINK_CLICK', url: 'https://lifecycle.example/second', title: 'Second page', targetBlank: false }, { id: 600 });
+await send({ type: 'OBSERVE_PAGE', url: 'https://lifecycle.example/second', title: 'Second page' }, { id: 600 });
+
+// Verify first page node is closed when navigated away
+const firstNodeAfterNav = session().nodes.find(n => n.id === firstNodeId);
+assert.ok(firstNodeAfterNav.closedAt, 'first page node must be marked as closed after navigating away');
+
+// Return to first page URL and verify node is reopened
+await send({ type: 'OBSERVE_PAGE', url: 'https://lifecycle.example/first', title: 'First page again' }, { id: 600 });
+const firstNodeAfterReturn = session().nodes.find(n => n.id === firstNodeId);
+assert.equal(firstNodeAfterReturn.closedAt, undefined, 'first page node must be reopened (closedAt cleared) when returning to its URL');
+
+// Test import/export roundtrip
+await send({ type: 'CLEAR_DATA' });
+await send({ type: 'START_MISSION', mission: 'Export import test', tab: { id: 700, url: 'chrome-extension://test/newtab/index.html', title: 'New Tab' } });
+await send({ type: 'OBSERVE_PAGE', url: 'https://export.example/page', title: 'Export page' }, { id: 700 });
+const exported = await send({ type: 'EXPORT_DATA' });
+assert.ok(exported.data, 'export should return data');
+assert.equal(exported.data.sessions.length, 1, 'export should contain one session');
+assert.equal(exported.data.sessions[0].mission, 'Export import test', 'export should preserve mission');
+
+await send({ type: 'CLEAR_DATA' });
+assert.equal((await send({ type: 'GET_SNAPSHOT' })).session, null, 'clearing data should remove active session');
+
+const imported = await send({ type: 'IMPORT_DATA', payload: exported });
+assert.ok(imported.imported, 'import should succeed');
+const afterImport = await send({ type: 'GET_SNAPSHOT', includeHistory: true });
+assert.equal(afterImport.session.mission, 'Export import test', 'import should restore session');
+assert.equal(afterImport.session.nodes[0].url, 'https://export.example/page', 'import should restore nodes');
+
+// Test onboarding completion
+await send({ type: 'CLEAR_DATA' });
+const beforeOnboarding = await send({ type: 'GET_SNAPSHOT' });
+assert.equal(beforeOnboarding.state.onboardingCompleted, false, 'new state should not have onboarding completed');
+await send({ type: 'COMPLETE_ONBOARDING' });
+const afterOnboarding = await send({ type: 'GET_SNAPSHOT' });
+assert.equal(afterOnboarding.state.onboardingCompleted, true, 'onboarding should be marked as completed');
+
+// Test settings sync
+await send({ type: 'UPDATE_SETTINGS', settings: { gentleDepth: 6, choiceDepth: 8 } });
+const afterSettings = await send({ type: 'GET_SNAPSHOT' });
+assert.equal(afterSettings.settings.gentleDepth, 6, 'settings update should persist');
+assert.equal(afterSettings.settings.choiceDepth, 8, 'settings update should persist');
+
 console.log('service-worker behavioral tests passed');

@@ -22,9 +22,21 @@ async function init() {
     if (snap && snap.session) {
       resumeBtn.hidden = false;
       resumeBtn.querySelector('.action-text').textContent = `Continue Session · "${snap.session.mission}"`;
+      const threshold = snap.thresholds?.INTERRUPT || 5;
+      const currentDepth = Math.max(...snap.session.nodes.map((node) => node.depth || 0), 0);
+      if (currentDepth >= threshold) {
+        resumeBtn.querySelector('.action-text').textContent += ` · ${currentDepth} branches deep`;
+      }
+    }
+    if (snap && snap.state && !snap.state.onboardingCompleted) {
+      const overlay = document.getElementById('onboarding-overlay');
+      if (overlay) {
+        overlay.hidden = false;
+        document.getElementById('onboarding-start')?.focus();
+      }
     }
   } catch (err) { logError(err, { category: ERROR_CATEGORIES.MESSAGING, function: 'init' }); }
-  setTimeout(() => input.focus(), 300);
+  setTimeout(() => input.focus(), 350);
 }
 
 function initSafely() { return safeInit().catch((error) => { logError(error, { category: ERROR_CATEGORIES.UI_RENDER, function: 'initSafely' }); }); }
@@ -43,7 +55,7 @@ form.addEventListener('submit', wrapWithErrorBoundary(async (event) => {
     input.value = '';
     updateCount();
     input.blur();
-    setTimeout(() => { status.hidden = true; }, 4000);
+    setTimeout(() => { window.location.href = 'about:blank'; }, 400);
   } catch (err) {
     logError(err, { category: ERROR_CATEGORIES.MESSAGING, function: 'startMission' });
     status.hidden = false;
@@ -73,3 +85,13 @@ browseBtn.addEventListener('click', wrapWithErrorBoundary(async () => {
 
 updateCount();
 initSafely();
+
+// Onboarding dismiss
+const onboardingStart = document.getElementById('onboarding-start');
+if (onboardingStart) {
+  onboardingStart.addEventListener('click', wrapWithErrorBoundary(async () => {
+    const overlay = document.getElementById('onboarding-overlay');
+    if (overlay) overlay.hidden = true;
+    await message('COMPLETE_ONBOARDING');
+  }, { category: ERROR_CATEGORIES.MESSAGING, function: 'onboarding.start', swallow: true }));
+}

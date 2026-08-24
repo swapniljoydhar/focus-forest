@@ -1,4 +1,4 @@
-import { LIMITS, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota } from '../shared/state.js';
+import { LIMITS, SCHEMA_VERSION, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota, normalizeState } from '../shared/state.js';
 import { logError, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
@@ -19,14 +19,42 @@ function recentlyObservedSpa(tabId, url) {
   if (previous != null && now - previous < 1000) return true;
   if (!spaDedup.has(key) && spaDedup.size >= MAX_SPA_DEDUP) spaDedup.delete(spaDedup.keys().next().value);
   spaDedup.set(key, now);
-  setTimeout(() => { if (spaDedup.get(key) === now) spaDedup.delete(key); }, 1500);
   return false;
 }
 
-function prunePendingBranches() { const now = Date.now(); for (const [key, entry] of pendingBranches) if (now - entry.createdAt >= 15000) pendingBranches.delete(key); while (pendingBranches.size > MAX_PENDING_BRANCHES) pendingBranches.delete(pendingBranches.keys().next().value); }
-function pendingBranchKey(url, sourceTabId, windowId) { return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${Number.isInteger(windowId) ? windowId : 'nowin'}::${url}`; }
-function setPendingBranch(url, sourceTabId, windowId, parentId) { prunePendingBranches(); const key = pendingBranchKey(url, sourceTabId, windowId); pendingBranches.set(key, { url, sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null, windowId: Number.isInteger(windowId) ? windowId : null, parentId, createdAt: Date.now() }); }
-function takePendingBranch(url, sourceTabId, windowId) { prunePendingBranches(); const exact = pendingBranches.get(pendingBranchKey(url, sourceTabId, windowId)); if (exact) { pendingBranches.delete(pendingBranchKey(url, sourceTabId, windowId)); return exact; } const candidates = [...pendingBranches.entries()].filter(([, entry]) => entry.url === url && entry.sourceTabId == null); if (candidates.length !== 1) return null; pendingBranches.delete(candidates[0][0]); return candidates[0][1]; }
+function prunePendingBranches() {
+  const now = Date.now();
+  for (const [key, entry] of pendingBranches) {
+    if (now - entry.createdAt >= 15000) pendingBranches.delete(key);
+  }
+  while (pendingBranches.size > MAX_PENDING_BRANCHES) pendingBranches.delete(pendingBranches.keys().next().value);
+}
+function pendingBranchKey(url, sourceTabId, windowId) {
+  return `${Number.isInteger(sourceTabId) ? sourceTabId : 'unknown'}::${Number.isInteger(windowId) ? windowId : 'nowin'}::${url}`;
+}
+function setPendingBranch(url, sourceTabId, windowId, parentId) {
+  prunePendingBranches();
+  const key = pendingBranchKey(url, sourceTabId, windowId);
+  pendingBranches.set(key, {
+    url,
+    sourceTabId: Number.isInteger(sourceTabId) ? sourceTabId : null,
+    windowId: Number.isInteger(windowId) ? windowId : null,
+    parentId,
+    createdAt: Date.now()
+  });
+}
+function takePendingBranch(url, sourceTabId, windowId) {
+  prunePendingBranches();
+  const exact = pendingBranches.get(pendingBranchKey(url, sourceTabId, windowId));
+  if (exact) {
+    pendingBranches.delete(pendingBranchKey(url, sourceTabId, windowId));
+    return exact;
+  }
+  const candidates = [...pendingBranches.entries()].filter(([, entry]) => entry.url === url && entry.sourceTabId == null);
+  if (candidates.length !== 1) return null;
+  pendingBranches.delete(candidates[0][0]);
+  return candidates[0][1];
+}
 const NO_CHANGE = Symbol('no-change');
 
 let mutationQueue = Promise.resolve();
@@ -47,7 +75,10 @@ function mutate(mutator) {
   return run;
 }
 function replaceState(nextState) {
-  const run = mutationQueue.then(async () => { await saveState(nextState); return nextState; });
+  const run = mutationQueue.then(async () => {
+    await saveState(nextState);
+    return nextState;
+  });
   mutationQueue = run.catch((error) => {
     logError(error, { category: ERROR_CATEGORIES.STATE_MUTATION, component: 'service-worker', function: 'replaceState-catch' });
     clearStateCache();
@@ -56,17 +87,54 @@ function replaceState(nextState) {
   return run;
 }
 
-function nodeHasTab(node, tabId) { return Number.isInteger(tabId) && (node.tabIds?.includes(tabId) || node.tabId === tabId); }
+function nodeHasTab(node, tabId) {
+  return Number.isInteger(tabId) && (node.tabIds?.includes(tabId) || node.tabId === tabId);
+}
 const TERMINAL_STATES = new Set(['pruned', 'composted']);
-function nodeForTab(session, tabId) { return [...session.nodes].reverse().find((node) => nodeHasTab(node, tabId) && !node.closedAt && !TERMINAL_STATES.has(node.state)) || null; }
-function attachTab(node, tabId) { if (!Number.isInteger(tabId)) return false; node.tabIds ||= []; if (node.tabIds.includes(tabId)) return false; node.tabIds.push(tabId); return true; }
-function detachTab(node, tabId) { if (!Array.isArray(node.tabIds)) return false; const before = node.tabIds.length; node.tabIds = node.tabIds.filter((id) => id !== tabId); return before !== node.tabIds.length; }
-function moveTabToNode(session, tabId, targetId) { session.nodes.forEach((node) => { if (node.id !== targetId) detachTab(node, tabId); }); }
+function nodeForTab(session, tabId) {
+  return [...session.nodes].reverse().find((node) => nodeHasTab(node, tabId) && !node.closedAt && !TERMINAL_STATES.has(node.state)) || null;
+}
+function attachTab(node, tabId) {
+  if (!Number.isInteger(tabId)) return false;
+  node.tabIds ||= [];
+  if (node.tabIds.includes(tabId)) return false;
+  node.tabIds.push(tabId);
+  return true;
+}
+function detachTab(node, tabId) {
+  if (!Array.isArray(node.tabIds)) return false;
+  const before = node.tabIds.length;
+  node.tabIds = node.tabIds.filter((id) => id !== tabId);
+  return before !== node.tabIds.length;
+}
+function moveTabToNode(session, tabId, targetId) {
+  session.nodes.forEach((node) => {
+    if (node.id !== targetId) {
+      const detached = detachTab(node, tabId);
+      if (detached && (!node.tabIds || !node.tabIds.length) && !node.closedAt) {
+        node.closedAt = Date.now();
+      }
+    }
+  });
+}
 
-function prunePendingRedirects(session) { const now = Date.now(); session.pendingRedirects = (session.pendingRedirects || []).filter((entry) => now - entry.createdAt < 15000).slice(-4); }
-function setPendingRedirect(session, tabId, parentId) { prunePendingRedirects(session); session.pendingRedirects = session.pendingRedirects.filter((entry) => entry.tabId !== tabId); session.pendingRedirects.push({ tabId, parentId, createdAt: Date.now() }); }
-function pendingRedirectParent(session, tabId) { prunePendingRedirects(session); const entry = session.pendingRedirects.find((candidate) => candidate.tabId === tabId); return entry ? session.nodes.find((node) => node.id === entry.parentId) : null; }
-function clearPendingRedirect(session, tabId) { session.pendingRedirects = (session.pendingRedirects || []).filter((entry) => entry.tabId !== tabId); }
+function prunePendingRedirects(session) {
+  const now = Date.now();
+  session.pendingRedirects = (session.pendingRedirects || []).filter((entry) => now - entry.createdAt < 15000).slice(-4);
+}
+function setPendingRedirect(session, tabId, parentId) {
+  prunePendingRedirects(session);
+  session.pendingRedirects = session.pendingRedirects.filter((entry) => entry.tabId !== tabId);
+  session.pendingRedirects.push({ tabId, parentId, createdAt: Date.now() });
+}
+function pendingRedirectParent(session, tabId) {
+  prunePendingRedirects(session);
+  const entry = session.pendingRedirects.find((candidate) => candidate.tabId === tabId);
+  return entry ? session.nodes.find((node) => node.id === entry.parentId) : null;
+}
+function clearPendingRedirect(session, tabId) {
+  session.pendingRedirects = (session.pendingRedirects || []).filter((entry) => entry.tabId !== tabId);
+}
 
 function isRedirectLike(value) {
   try {
@@ -75,13 +143,29 @@ function isRedirectLike(value) {
   } catch { return false; }
 }
 
-function isRecord(value) { return value && typeof value === 'object' && !Array.isArray(value); }
-function safeId(value) { return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : null; }
-function safeReason(value) { return ['user_ended', 'mission_changed', 'browse_without_mission'].includes(value) ? value : 'user_ended'; }
-function safeOriginUrl(value) { return safeSessionUrl(value) || 'chrome://newtab'; }
-function safeNavigationUrl(value) { return safeSessionUrl(value); }
-function sameOriginUrl(actual, expected) { const expectedHttp = safeHttpUrl(expected); return expectedHttp ? safeHttpUrl(actual) === expectedHttp : String(actual || '') === String(expected || ''); }
-function isExtensionPageSender(sender) { const id = chrome.runtime?.id; return typeof id === 'string' && typeof sender?.url === 'string' && sender.url.startsWith(`chrome-extension://${id}/`); }
+function isRecord(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+function safeId(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,160}$/.test(value) ? value : null;
+}
+function safeReason(value) {
+  return ['user_ended', 'mission_changed', 'browse_without_mission'].includes(value) ? value : 'user_ended';
+}
+function safeOriginUrl(value) {
+  return safeSessionUrl(value) || 'chrome://newtab';
+}
+function safeNavigationUrl(value) {
+  return safeSessionUrl(value);
+}
+function sameOriginUrl(actual, expected) {
+  const expectedHttp = safeHttpUrl(expected);
+  return expectedHttp ? safeHttpUrl(actual) === expectedHttp : String(actual || '') === String(expected || '');
+}
+function isExtensionPageSender(sender) {
+  const id = chrome.runtime?.id;
+  return typeof id === 'string' && typeof sender?.url === 'string' && sender.url.startsWith(`chrome-extension://${id}/`);
+}
 
 // Coerce a sender or client-supplied tab descriptor into a minimal safe shape.
 // Only numeric ids and sanitized url/title fields are preserved; the genuine
@@ -149,7 +233,7 @@ async function createSession(mission, tab) {
     if (state.sessions.length > LIMITS.SESSIONS) state.sessions.splice(0, state.sessions.length - LIMITS.SESSIONS);
     state.activeSessionId = session.id;
     return session;
-  });
+  }).then((result) => { updateBadge(); return result; });
 }
 
 async function endSession(reason = 'user_ended') {
@@ -160,7 +244,32 @@ async function endSession(reason = 'user_ended') {
     addEvent(session, reason === 'mission_changed' ? 'mission_changed' : 'mission_ended', { reason });
     state.activeSessionId = null;
     return session;
-  });
+  }).then((result) => { if (result !== NO_CHANGE) updateBadge(); return result; });
+}
+
+function updateBadge() {
+  if (!chrome.action?.setBadgeText || !chrome.action?.setBadgeBackgroundColor) return;
+  loadState().then((state) => {
+    const session = activeSession(state);
+    if (!session) {
+      chrome.action.setBadgeText({ text: '' });
+      chrome.action.setBadgeBackgroundColor({ color: '#00000000' });
+      return;
+    }
+    const paused = session.interventionPaused;
+    const depth = Math.max(0, ...session.nodes.map((node) => node.depth || 0));
+    const thresholds = effectiveThresholds(state.settings);
+    if (paused) {
+      chrome.action.setBadgeText({ text: '⏸' });
+      chrome.action.setBadgeBackgroundColor({ color: '#c6a562' });
+    } else if (depth >= thresholds.INTERRUPT) {
+      chrome.action.setBadgeText({ text: '🌱' });
+      chrome.action.setBadgeBackgroundColor({ color: '#bd8473' });
+    } else {
+      chrome.action.setBadgeText({ text: '🌱' });
+      chrome.action.setBadgeBackgroundColor({ color: '#719b6c' });
+    }
+  }).catch(() => {});
 }
 
 async function trackLink({ tabId, url, title, targetBlank = false, windowId }) {
@@ -203,8 +312,17 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId, windowId) {
     }
     if (current && current.url === url) return NO_CHANGE;
     if (isSearchUrl(url) && !originNotSet) return NO_CHANGE;
-    const known = session.nodes.find((node) => node.url === url && !node.closedAt && !TERMINAL_STATES.has(node.state));
-    if (known) { clearPendingRedirect(session, tabId); moveTabToNode(session, tabId, known.id); const attached = attachTab(known, tabId); known.title = title; if (attached) addEvent(session, 'tab_joined_path', { nodeId: known.id, url }); else addEvent(session, 'return_to_path', { nodeId: known.id, url }); return known; }
+    const known = session.nodes.find((node) => node.url === url && !TERMINAL_STATES.has(node.state));
+    if (known) {
+      clearPendingRedirect(session, tabId);
+      moveTabToNode(session, tabId, known.id);
+      const attached = attachTab(known, tabId);
+      known.title = title;
+      if (known.closedAt) delete known.closedAt;
+      if (attached) addEvent(session, 'tab_joined_path', { nodeId: known.id, url });
+      else addEvent(session, 'return_to_path', { nodeId: known.id, url });
+      return known;
+    }
     const opener = openerTabId && nodeForTab(session, openerTabId);
     prunePendingBranches();
     const pending = takePendingBranch(url, Number.isInteger(openerTabId) ? openerTabId : tabId, Number.isInteger(windowId) ? windowId : null);
@@ -399,6 +517,24 @@ async function exportAllData() {
   return { data: state };
 }
 
+// Import data from a previously exported snapshot.
+// Merges sessions/compost/events and replaces settings.
+async function importAllData(payload) {
+  if (!isRecord(payload) || !isRecord(payload.data)) throw new Error('invalid_payload');
+  const incoming = payload.data;
+  const incomingState = isRecord(incoming.state) ? incoming.state : incoming;
+  const next = await normalizeState(incomingState);
+  const merged = {
+    schemaVersion: SCHEMA_VERSION,
+    sessions: [...(await loadState()).sessions, ...next.sessions].slice(-LIMITS.SESSIONS),
+    compostItems: [...(await loadState()).compostItems, ...next.compostItems].slice(0, LIMITS.COMPOST),
+    settings: next.settings,
+    activeSessionId: next.activeSessionId || (await loadState()).activeSessionId
+  };
+  await replaceState(merged);
+  return { imported: true };
+}
+
 chrome.runtime.onInstalled.addListener(() => {
   wrapWithErrorBoundary(async () => {
     const result = await chrome.storage.local.get(STORAGE_KEY);
@@ -406,6 +542,30 @@ chrome.runtime.onInstalled.addListener(() => {
     // Check initial storage quota after seeding
     await checkStorageQuota();
   }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled', swallow: true })();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  wrapWithErrorBoundary(() => {
+    chrome.contextMenus?.create({ id: 'focus-forest-start', title: 'Start Focus Mission for "%s"', contexts: ['link', 'page', 'selection'] });
+    chrome.contextMenus?.create({ id: 'focus-forest-end', title: 'End Current Focus Mission', contexts: ['page'] });
+  }, { category: ERROR_CATEGORIES.MESSAGING, component: 'service-worker', function: 'contextMenus.create', swallow: true })();
+});
+
+chrome.contextMenus?.onClicked?.addListener((info, tab) => {
+  wrapWithErrorBoundary(async () => {
+    if (info.menuItemId === 'focus-forest-start') {
+      const title = typeof info.selectionText === 'string' && info.selectionText.trim() ? info.selectionText.trim() : (tab?.title || tab?.url || 'New Tab');
+      const mission = compactText(title, 140);
+      if (!mission) return;
+      const cleanUrl = safeHttpUrl(tab?.url);
+      await createSession(mission, { id: tab?.id, url: cleanUrl || 'chrome://newtab', title: tab?.title || 'New Tab', windowId: tab?.windowId });
+      if (tab?.id != null && cleanUrl) {
+        await chrome.tabs.update(tab.id, { url: cleanUrl });
+      }
+    } else if (info.menuItemId === 'focus-forest-end') {
+      await endSession('user_ended');
+    }
+  }, { category: ERROR_CATEGORIES.MESSAGING, component: 'service-worker', function: 'contextMenus.onClicked', swallow: true })();
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -432,8 +592,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return observeTab(tab.id, message.url, typeof message.title === 'string' ? message.title : '', tab.openerTabId, tab.windowId);
       }
       case 'COMPOST': return Number.isInteger(tab?.id) ? compost(tab.id, message.url, message.title) : null;
-      case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }) : null;
-      case 'UPDATE_SETTINGS': return isExtensionPageSender(sender) && isRecord(message.settings) ? mutate((state) => { const next = normalizeSettings({ ...state.settings, ...message.settings }); if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE; state.settings = next; const session = activeSession(state); if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); }); return state.settings; }) : null;
+      case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }).then((result) => { if (result !== NO_CHANGE) updateBadge(); return result; }) : null;
+      case 'UPDATE_SETTINGS': return isExtensionPageSender(sender) && isRecord(message.settings) ? mutate((state) => { const next = normalizeSettings({ ...state.settings, ...message.settings }); if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE; state.settings = next; const session = activeSession(state); if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); }); return state.settings; }).then((result) => { if (result !== NO_CHANGE) void syncSettingsToCloud(); return result; }) : null;
       case 'DELETE_COMPOST': return isExtensionPageSender(sender) && safeId(message.id) ? mutate((state) => { const before = state.compostItems.length; state.compostItems = state.compostItems.filter((item) => item.id !== message.id); return before === state.compostItems.length ? NO_CHANGE : state.compostItems; }) : null;
       case 'PRUNE_NODE': return isExtensionPageSender(sender) && safeId(message.sessionId) && safeId(message.nodeId) ? pruneNode(message.sessionId, message.nodeId, Boolean(message.toCompost)) : null;
       case 'DELETE_SESSION': return isExtensionPageSender(sender) && safeId(message.sessionId) ? mutate((state) => { const before = state.sessions.length; state.sessions = state.sessions.filter((session) => session.id !== message.sessionId); if (state.activeSessionId === message.sessionId) state.activeSessionId = null; return before === state.sessions.length ? NO_CHANGE : state.sessions; }) : null;
@@ -442,7 +602,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'GET_DASHBOARD_STATS': return isExtensionPageSender(sender) ? getDashboardStats() : null;
       case 'REMOVE_SAVED_ITEM': return isExtensionPageSender(sender) && safeId(message.id) ? removeSavedItem(message.id) : null;
       case 'EXPORT_DATA': return isExtensionPageSender(sender) ? exportAllData() : null;
+      case 'IMPORT_DATA': return isExtensionPageSender(sender) && isRecord(message.payload) ? importAllData(message.payload) : null;
       case 'CHECK_STORAGE_QUOTA': return isExtensionPageSender(sender) ? await checkStorageQuota() : null;
+      case 'COMPLETE_ONBOARDING': return isExtensionPageSender(sender) ? mutate((state) => { state.onboardingCompleted = true; return state; }) : null;
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
         // Only treat HTTP(S) origins as real navigation targets.
@@ -486,9 +648,11 @@ const SCHEMAS = {
   GET_DASHBOARD_STATS: {},
   REMOVE_SAVED_ITEM: { id: 'string' },
   EXPORT_DATA: {},
+  IMPORT_DATA: { payload: 'object' },
   CLEAR_ALL_DATA: {},
   GO_HOME: {},
-  CHECK_STORAGE_QUOTA: {}
+  CHECK_STORAGE_QUOTA: {},
+  COMPLETE_ONBOARDING: {}
 };
 const TYPE_CHECKS = {
   string: (v) => typeof v === 'string',
@@ -526,6 +690,22 @@ chrome.webNavigation?.onHistoryStateUpdated?.addListener((details) => {
   }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'webNavigation.onHistoryStateUpdated', swallow: true })(details);
 });
 
+chrome.commands?.onCommand?.addListener((command) => {
+  return wrapWithErrorBoundary(async () => {
+    if (command !== 'toggle-mission') return;
+    const state = await loadState();
+    const session = activeSession(state);
+    if (session) {
+      await endSession('user_ended');
+    } else {
+      const tab = await chrome.tabs.query({ active: true, currentWindow: true }).then((tabs) => tabs[0]).catch(() => null);
+      if (tab?.id != null && tab?.url) {
+        await createSession(compactText(tab.title || tab.url, 140), { id: tab.id, url: tab.url, title: tab.title, windowId: tab.windowId });
+      }
+    }
+  }, { category: ERROR_CATEGORIES.MESSAGING, component: 'service-worker', function: 'commands.onCommand', swallow: true })();
+});
+
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   return wrapWithErrorBoundary(async (tabId, changeInfo, tab) => {
     if (changeInfo.status === 'complete' && tab.url) await observeTab(tabId, tab.url, tab.title, tab.openerTabId, tab.windowId);
@@ -549,3 +729,34 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     });
   }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onRemoved', swallow: true })(tabId);
 });
+
+// Settings sync via chrome.storage.sync
+const SETTINGS_SYNC_KEY = 'focusForestSettingsSync';
+
+async function syncSettingsToCloud() {
+  try {
+    const state = await loadState();
+    if (chrome.storage?.sync) {
+      await chrome.storage.sync.set({ [SETTINGS_SYNC_KEY]: state.settings });
+    }
+  } catch (err) {
+    logError(err, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'syncSettingsToCloud', swallow: true });
+  }
+}
+
+if (chrome.storage?.sync?.onChanged) {
+  chrome.storage.sync.onChanged.addListener((changes, area) => {
+    if (area !== 'sync' || !changes[SETTINGS_SYNC_KEY]) return;
+    wrapWithErrorBoundary(async () => {
+      const remote = changes[SETTINGS_SYNC_KEY].newValue;
+      if (!isRecord(remote)) return;
+      const state = await loadState();
+      const next = normalizeSettings({ ...state.settings, ...remote });
+      if (JSON.stringify(next) === JSON.stringify(state.settings)) return;
+      const session = activeSession(state);
+      if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); });
+      state.settings = next;
+      await saveState(state);
+    }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'storage.sync.onChanged', swallow: true })();
+  });
+}

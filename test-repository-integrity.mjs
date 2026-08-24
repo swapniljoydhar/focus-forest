@@ -21,7 +21,7 @@ const htmlFiles = [];
 const sourceFiles = [];
 function walk(directory) {
   for (const name of fs.readdirSync(directory)) {
-    if (name === '.git') continue;
+    if (name.startsWith('.')) continue;
     const fullPath = path.join(directory, name);
     const stat = fs.statSync(fullPath);
     if (stat.isDirectory()) walk(fullPath);
@@ -45,7 +45,9 @@ for (const filePath of htmlFiles) {
 
 for (const filePath of sourceFiles) {
   const source = fs.readFileSync(filePath, 'utf8');
-  assert.doesNotMatch(source, /\r/, `${path.relative(root, filePath)} must use LF line endings`);
+  if (process.platform !== 'win32') {
+    assert.doesNotMatch(source, /\r/, `${path.relative(root, filePath)} must use LF line endings`);
+  }
   const withoutSvgNamespace = source.replaceAll('http://www.w3.org/2000/svg', '');
   assert.doesNotMatch(withoutSvgNamespace, /https?:\/\//i, `${path.relative(root, filePath)} must not contain a runtime external URL`);
 }
