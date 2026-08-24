@@ -1,4 +1,4 @@
-﻿// Import error tracing for quota monitoring logs
+// Import error tracing for quota monitoring logs
 import { logError, logWarning, logCritical, ERROR_CATEGORIES } from './error-tracing.js';
 
 export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
@@ -9,14 +9,29 @@ export const DEFAULT_SETTINGS = { gentleDepth: 4, choiceDepth: 5, ambientMotion:
 export const STORAGE_QUOTA_WARNING_THRESHOLD = 4 * 1024 * 1024; // 4MB warning threshold
 export const STORAGE_QUOTA_CRITICAL_THRESHOLD = 7 * 1024 * 1024; // 7MB critical threshold (Chrome's limit is ~8MB)
 
+/**
+ * Returns a fresh empty state object with default settings.
+ * @returns {object} Empty state matching the current schema version.
+ */
 export function emptyState() {
-  return { schemaVersion: SCHEMA_VERSION, activeSessionId: null, sessions: [], compostItems: [], settings: { interventionsPaused: false, ...DEFAULT_SETTINGS } };
+  return { schemaVersion: SCHEMA_VERSION, activeSessionId: null, sessions: [], compostItems: [], settings: { interventionsPaused: false, ...DEFAULT_SETTINGS }, onboardingCompleted: false };
 }
 
+/**
+ * Generates a unique ID with an optional prefix.
+ * @param {string} [prefix='id'] - Prefix for the generated ID.
+ * @returns {string} Unique identifier string.
+ */
 export function makeId(prefix = 'id') {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Truncates and normalizes whitespace in a text value.
+ * @param {string} value - Raw text value.
+ * @param {number} [max=LIMITS.TITLE] - Maximum allowed length.
+ * @returns {string} Compacted text.
+ */
 export function compactText(value, max = LIMITS.TITLE) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
@@ -25,16 +40,34 @@ const TRACKING_PARAMETERS = new Set(['utm_source', 'utm_medium', 'utm_campaign',
 const SEARCH_DOMAINS = new Set(['google', 'bing', 'duckduckgo', 'yahoo', 'startpage', 'brave', 'baidu', 'yandex', 'ecosia', 'qwant']);
 const SEARCH_PARAMS = new Set(['q', 'search', 'query', 'p']);
 
+/**
+ * Determines whether a URL is a search engine result page.
+ * Excludes non-search Google subdomains (Gmail, Drive, Docs, etc.).
+ * @param {string} value - URL to test.
+ * @returns {boolean} True if the URL is a search result page.
+ */
 export function isSearchUrl(value) {
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase();
-    if (SEARCH_DOMAINS.has(host.split('.').slice(-2).join('.'))) return true;
+    // Google: only match actual search pages, not Gmail/Drive/Docs/Calendar etc.
+    if (/^(www\.)?google\.[a-z.]+$/i.test(host)) {
+      return /^\/(search|webhp)(\/|$|\?)/.test(url.pathname) || url.searchParams.has('q');
+    }
+    // Other search engines: match by domain
+    const baseDomain = host.split('.').slice(-2, -1)[0];
+    if (SEARCH_DOMAINS.has(baseDomain) && baseDomain !== 'google') return true;
+    // Fallback: check for common search query parameters
     for (const key of url.searchParams.keys()) { if (SEARCH_PARAMS.has(key.toLowerCase())) return true; }
     return false;
   } catch { return false; }
 }
 
+/**
+ * Strips tracking parameters and returns a clean canonical URL.
+ * @param {string} value - Raw URL string.
+ * @returns {string|null} Sanitized URL or null if invalid.
+ */
 export function canonicalUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -48,6 +81,11 @@ export function canonicalUrl(value) {
   }
 }
 
+/**
+ * Validates and sanitizes an HTTP/HTTPS URL.
+ * @param {string} value - Raw URL string.
+ * @returns {string|null} Safe URL or null if invalid.
+ */
 export function safeHttpUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -58,6 +96,13 @@ export function safeHttpUrl(value) {
   }
 }
 
+/**
+ * Maps a depth value to a visual/behavioral state label.
+ * @param {number} depth - Current branch depth.
+ * @param {boolean} [paused=false] - Whether interventions are paused.
+ * @param {object} [thresholds=DEFAULT_SETTINGS] - Depth thresholds.
+ * @returns {string} One of 'paused', 'interrupted', 'desaturated', or 'normal'.
+ */
 export function getDepthState(depth, paused = false, thresholds = DEFAULT_SETTINGS) {
   if (paused) return 'paused';
   if (depth >= thresholds.choiceDepth) return 'interrupted';
@@ -65,6 +110,11 @@ export function getDepthState(depth, paused = false, thresholds = DEFAULT_SETTIN
   return 'normal';
 }
 
+/**
+ * Finds the currently active session in a state object.
+ * @param {object} state - Focus Forest state.
+ * @returns {object|null} Active session or null.
+ */
 export function activeSession(state) {
   return state.sessions.find((session) => session.id === state.activeSessionId) || null;
 }
@@ -72,6 +122,12 @@ export function activeSession(state) {
 const SAFE_STATES = new Set(['normal', 'desaturated', 'interrupted', 'paused', 'pruned', 'composted']);
 const SAFE_CONFIDENCE = new Set(['direct', 'tab-inferred', 'external']);
 const SAFE_REASONS = new Set(['user_ended', 'mission_changed', 'browse_without_mission']);
+/**
+ * Validates a URL for safe session storage.
+ * Accepts HTTP(S) URLs, chrome://newtab, and the current extension origin.
+ * @param {string} value - Raw URL string.
+ * @returns {string|null} Safe URL or null if invalid.
+ */
 export function safeSessionUrl(value) {
   const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http;
   if (/^chrome:\/\/newtab(?:\/|$)/i.test(raw)) return raw.length <= LIMITS.URL ? raw : null;
@@ -104,6 +160,12 @@ function compactSession(session) {
   return { id, mission: compactText(session.mission, 140), status, startedAt: Number.isFinite(session.startedAt) ? session.startedAt : Date.now(), endedAt: Number.isFinite(session.endedAt) ? session.endedAt : null, endReason: SAFE_REASONS.has(session.endReason) ? session.endReason : null, origin: { tabId: Number.isInteger(session.origin?.tabId) ? session.origin.tabId : null, windowId: Number.isInteger(session.origin?.windowId) ? session.origin.windowId : null, url: safeSessionUrl(session.origin?.url) || 'chrome://newtab', title: compactText(session.origin?.title || 'New Tab', LIMITS.TITLE) }, nodes: Array.isArray(session.nodes) ? session.nodes.slice(-LIMITS.NODES_PER_SESSION).map(compactNode).filter(Boolean) : [], events: Array.isArray(session.events) ? session.events.slice(-LIMITS.EVENTS_PER_SESSION).map(compactEvent).filter(Boolean) : [], pendingRedirects: Array.isArray(session.pendingRedirects) ? session.pendingRedirects.filter((entry) => Number.isInteger(entry?.tabId) && typeof entry?.parentId === 'string').slice(-4).map((entry) => ({ tabId: entry.tabId, parentId: compactText(entry.parentId, 120), createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now() })) : [], interventionPaused: Boolean(session.interventionPaused) };
 }
 
+/**
+ * Normalizes raw persisted state into the current schema shape.
+ * Trims arrays to LIMITS, sanitizes URLs, and coerces types.
+ * @param {object} value - Raw state from storage.
+ * @returns {object} Normalized state object.
+ */
 export function normalizeState(value) {
   const fallback = emptyState();
   if (!value || typeof value !== 'object') return fallback;
@@ -114,10 +176,29 @@ export function normalizeState(value) {
     activeSessionId,
     sessions,
     compostItems: Array.isArray(value.compostItems) ? value.compostItems.slice(0, LIMITS.COMPOST).map((item) => { const url = safeHttpUrl(item?.url); if (!url) return null; return { id: compactText(item?.id, 120), url, title: compactText(item?.title || url, LIMITS.TITLE), mission: compactText(item?.mission, 140), depth: Math.max(0, Math.min(LIMITS.NODES_PER_SESSION, Number(item?.depth) || 0)), savedAt: Number.isFinite(item?.savedAt) ? item.savedAt : Date.now() }; }).filter((item) => item?.id && item.url) : [],
-    settings: normalizeSettings(value.settings, fallback.settings)
+    settings: normalizeSettings(value.settings, fallback.settings),
+    onboardingCompleted: Boolean(value.onboardingCompleted)
   };
 }
 
+/**
+ * Calculates how long a node was active in seconds.
+ * @param {object} node - Session node object.
+ * @returns {number} Duration in seconds (0 if node is null).
+ */
+export function getNodeDuration(node) {
+  if (!node || typeof node !== 'object') return 0;
+  const start = Number.isFinite(node.firstSeenAt) ? node.firstSeenAt : Date.now();
+  const end = Number.isFinite(node.closedAt) ? node.closedAt : Date.now();
+  return Math.max(0, Math.floor((end - start) / 1000));
+}
+
+/**
+ * Normalizes user-provided settings against defaults and clamps values.
+ * @param {object} value - Raw settings object.
+ * @param {object} [fallback=emptyState().settings] - Default settings.
+ * @returns {object} Sanitized settings object.
+ */
 export function normalizeSettings(value, fallback = emptyState().settings) {
   const source = value && typeof value === 'object' ? value : {};
   const gentleDepth = Math.max(2, Math.min(8, Number(source.gentleDepth) || fallback.gentleDepth));
@@ -158,6 +239,11 @@ export async function checkStorageQuota() {
   }
 }
 
+/**
+ * Loads the persisted Focus Forest state from chrome.storage.local.
+ * Returns a cached copy if available and not invalidated.
+ * @returns {Promise<object>} Normalized state object.
+ */
 export async function loadState() {
   if (stateCache !== null) return stateCache;
   try {
@@ -169,6 +255,11 @@ export async function loadState() {
   }
 }
 
+/**
+ * Persists a state object to chrome.storage.local and updates the cache.
+ * @param {object} state - State object to persist.
+ * @returns {Promise<object>} The saved state.
+ */
 export async function saveState(state) {
   ownWritesInFlight += 1;
   try {
@@ -180,6 +271,9 @@ export async function saveState(state) {
   return state;
 }
 
+/**
+ * Clears the in-memory state cache, forcing the next loadState() to read from storage.
+ */
 export function clearStateCache() {
   stateCache = null;
 }
