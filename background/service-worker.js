@@ -1,4 +1,4 @@
-import { LIMITS, SCHEMA_VERSION, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota, normalizeState } from '../shared/state.js';
+import { LIMITS, SCHEMA_VERSION, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isBrowserNewTabUrl, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota, normalizeState } from '../shared/state.js';
 import { logError, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
@@ -300,11 +300,11 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId, windowId) {
   const url = safeHttpUrl(rawUrl);
   const title = compactText(rawTitle || url);
   return mutate((state) => {
-    const session = activeSession(state); if (!session || !url || url.startsWith('chrome://')) return NO_CHANGE;
+    const session = activeSession(state); if (!session || !url) return NO_CHANGE;
     const current = nodeForTab(session, tabId);
-    // Origin is "not set" if it's still the newtab placeholder (either chrome:// or chrome-extension://)
+    // The origin is unset on a Chrome/Brave new tab or our own New Tab page.
     const originUrl = session.origin?.url || '';
-    const originNotSet = /^chrome:\/\/newtab(?:\/|$)/i.test(originUrl) || /^chrome-extension:\/\/[^/]*\/newtab\//i.test(originUrl) || session.nodes.length === 1 && !session.nodes[0].url.startsWith('http');
+    const originNotSet = isBrowserNewTabUrl(originUrl) || /^chrome-extension:\/\/[^/]*\/newtab\//i.test(originUrl) || session.nodes.length === 1 && !session.nodes[0].url.startsWith('http');
     if (originNotSet) {
       const root = session.nodes[0] || session.nodes.at(-1);
       if (root) { attachTab(root, tabId); root.url = url; root.title = title; root.firstSeenAt = Date.now(); root.relationshipConfidence = 'direct'; }
@@ -608,7 +608,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
         // Only treat HTTP(S) origins as real navigation targets.
-        // Extension pages and chrome:// URLs are not useful "go home" destinations.
+        // Extension pages and internal browser URLs are not useful "go home" destinations.
         const hasRealOrigin = Boolean(returnUrl) && /^https?:\/\//i.test(returnUrl);
         let returnedToOrigin = false;
         if (originTabId && hasRealOrigin) {

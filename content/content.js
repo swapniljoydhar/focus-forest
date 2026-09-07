@@ -1,5 +1,6 @@
 (() => {
-  if (location.protocol === 'chrome-extension:' || location.protocol === 'chrome:' || location.protocol === 'edge:') return;
+  // Browser-internal pages (including Brave) and extension pages are not websites.
+  if (!['http:', 'https:'].includes(location.protocol)) return;
   
   // --- Resilience: Prevent Duplicate Injection ---
   if (window.__focusForestInjected) {
@@ -132,11 +133,22 @@
   rootEl.id = 'ff-root';
   const chipEl = makeElement('div', 'chip', { role: 'group', 'aria-label': 'Focus Forest companion', hidden: true });
   const seedEl = makeElement('span', 'chip-seed', { 'aria-hidden': 'true', 'data-drag-handle': '', title: 'Drag to move' });
-  // Inline SVG tree icon with trunk, asymmetrical branches, and leaf buds
+  // A tiny version of the storybook tree, built without an HTML/Trusted Types sink.
   const treeSVG = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   treeSVG.setAttribute('viewBox', '0 0 28 28');
   treeSVG.setAttribute('class', 'chip-seed-tree');
-  treeSVG.innerHTML = '<defs><linearGradient id="ff-trunk-grad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" style="stop-color:#5d7a55"/><stop offset="50%" style="stop-color:#6c9868"/><stop offset="100%" style="stop-color:#5d7a55"/></linearGradient></defs><path d="M14 24 C13 18 14 12 14 8 M14 14 C10 12 6 10 4 6 M14 12 C18 10 22 8 24 5 M14 8 C12 6 10 5 8 3 M14 6 C16 5 18 4 20 2" stroke="url(#ff-trunk-grad)" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.95"/><circle cx="4" cy="6" r="1.8" fill="#7fb375" opacity="0.9"/><circle cx="24" cy="5" r="1.6" fill="#7fb375" opacity="0.85"/><circle cx="8" cy="3" r="1.4" fill="#8fc485" opacity="0.8"/><circle cx="20" cy="2" r="1.3" fill="#8fc485" opacity="0.75"/>';
+  const iconShapes = [
+    ['ellipse', { cx: 14, cy: 25, rx: 10, ry: 1.7, fill: '#d5dfbd' }],
+    ['path', { d: 'M10.5 24.5 C12 21 12 17 11.8 13 L15.8 12 C15.4 17 16 21 18 24.5 Q14 26 10.5 24.5 Z', fill: '#b78653', stroke: '#906b43', 'stroke-width': '.7' }],
+    ['path', { d: 'M5 18 C1 18 0 12 3.5 10 C1.5 6 6 2.5 9 4 C10 0 16 0 18 4 C22 2 26 6 24 9 C28 11 27 17 23 18 C22 22 17 21 15 19 C11 22 7 21 5 18 Z', fill: '#7ea85b', stroke: '#537943', 'stroke-width': '.7' }],
+    ['path', { d: 'M4 11 C3 7 6 5 9 6 C9 2 16 2 17 6 C21 5 24 8 21 11 C17 13 14 10 12 12 C9 15 5 14 4 11 Z', fill: '#a1c576' }],
+    ['path', { d: 'M7 7 Q10 4 12 6', fill: 'none', stroke: '#deebaf', 'stroke-width': '1.1', 'stroke-linecap': 'round' }]
+  ];
+  iconShapes.forEach(([tag, attributes]) => {
+    const shape = document.createElementNS('http://www.w3.org/2000/svg', tag);
+    Object.entries(attributes).forEach(([key, value]) => shape.setAttribute(key, String(value)));
+    treeSVG.append(shape);
+  });
   seedEl.appendChild(treeSVG);
   const copyEl = makeElement('span', 'chip-copy');
   copyEl.append(makeElement('span', 'chip-kicker', '', 'current mission'), makeElement('strong', 'chip-mission'), makeElement('small', 'chip-state', { 'aria-live': 'polite' }));

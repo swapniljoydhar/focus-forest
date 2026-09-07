@@ -46,6 +46,23 @@ const inheritedMessage = Object.create({ type: 'CLEAR_DATA' });
 assert.equal(await rawSend(inheritedMessage, { id: 'test', url: 'chrome-extension://test/dashboard/index.html' }), null, 'inherited message fields must not bypass own-property validation');
 function session() { return store.focusForestState.sessions.find((s) => s.id === store.focusForestState.activeSessionId); }
 
+// Brave keeps the Chrome extension API/sender origin, but may expose brave:// new-tab URLs.
+for (const newTabUrl of ['brave://newtab', 'brave://newtab/']) {
+  await send({ type: 'START_MISSION', mission: 'Research in Brave', tab: { id: 801, url: newTabUrl, title: 'New Tab' } });
+  assert.equal(session().origin.url, newTabUrl, 'Brave new-tab placeholders should survive validation');
+  await send({ type: 'OBSERVE_PAGE', url: 'brave://settings', title: 'Settings' }, { id: 801 });
+  assert.equal(session().origin.url, newTabUrl, 'restricted browser pages must not become the mission origin');
+  await send({ type: 'OBSERVE_PAGE', url: 'https://search.brave.com/search?q=trees', title: 'Brave Search' }, { id: 801 });
+  assert.equal(session().nodes.length, 1, 'the first Brave Search page replaces the placeholder, not an extra branch');
+  assert.equal(session().nodes[0].depth, 0);
+  assert.equal(session().origin.url, 'https://search.brave.com/search?q=trees');
+  await send({ type: 'LINK_CLICK', url: 'https://example.com/trees', title: 'Trees' }, { id: 801 });
+  await send({ type: 'OBSERVE_PAGE', url: 'https://example.com/trees', title: 'Trees' }, { id: 801 });
+  assert.equal(session().nodes.at(-1).depth, 1, 'a link from Brave Search should grow exactly one branch');
+  await send({ type: 'CLEAR_DATA' });
+}
+tabInfo.delete(801);
+
 await send({ type: 'START_MISSION', mission: 'Find a good laptop to buy.', tab: { id: 7, url: 'chrome-extension://test/newtab/index.html', title: 'New Tab' } });
 await send({ type: 'OBSERVE_PAGE', url: 'https://example.com', title: 'Origin' }, { id: 7, openerTabId: undefined });
 assert.equal(session().nodes[0].depth, 0, 'first ordinary page must become depth 0');

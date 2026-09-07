@@ -4,6 +4,8 @@ import path from 'node:path';
 
 const root = process.cwd();
 const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.json'), 'utf8'));
+assert.ok(manifest.permissions.includes('storage'), 'Chromium storage APIs require the storage permission');
+assert.equal(manifest.permissions.includes('storage.sync'), false, 'storage.sync is an API, not a manifest permission');
 const required = [
   manifest.background?.service_worker,
   manifest.action?.default_popup,
@@ -21,7 +23,7 @@ const htmlFiles = [];
 const sourceFiles = [];
 function walk(directory) {
   for (const name of fs.readdirSync(directory)) {
-    if (name.startsWith('.')) continue;
+    if (name.startsWith('.') || ['node_modules', 'coverage', 'test-results', 'playwright-report'].includes(name)) continue;
     const fullPath = path.join(directory, name);
     const stat = fs.statSync(fullPath);
     if (stat.isDirectory()) walk(fullPath);
