@@ -1,4 +1,4 @@
-import { LIMITS, SCHEMA_VERSION, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, DEFAULT_NEW_TAB_URL, emptyState, getDepthState, isPlaceholderOriginUrl, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota, normalizeState } from '../shared/state.js';
+import { LIMITS, SCHEMA_VERSION, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, DEFAULT_NEW_TAB_URL, emptyState, getDepthState, isBrowserNewTabUrl, isExtensionNewTabUrl, isPlaceholderOriginUrl, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota, normalizeState } from '../shared/state.js';
 import { logError, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
@@ -166,6 +166,37 @@ function isExtensionPageSender(sender) {
   const id = chrome.runtime?.id;
   if (typeof id !== 'string' || typeof sender?.url !== 'string') return false;
   return sender.url.toLowerCase().startsWith(`chrome-extension://${id.toLowerCase()}/`);
+}
+
+function plantingPageUrl() {
+  return chrome.runtime.getURL('newtab/index.html');
+}
+
+const takingOverNewTabs = new Set();
+function newTabCandidateUrl(tab) {
+  return tab?.pendingUrl || tab?.url || '';
+}
+async function takeOverBrowserNewTab(tab) {
+  const tabId = tab?.id;
+  if (!Number.isInteger(tabId) || !chrome.tabs?.update) return false;
+  const url = newTabCandidateUrl(tab);
+  if (!isBrowserNewTabUrl(url) || isExtensionNewTabUrl(url)) return false;
+  const destination = plantingPageUrl();
+  if (url === destination || takingOverNewTabs.has(tabId)) return false;
+  takingOverNewTabs.add(tabId);
+  try {
+    await chrome.tabs.update(tabId, { url: destination });
+    return true;
+  } catch {
+    return false;
+  } finally {
+    takingOverNewTabs.delete(tabId);
+  }
+}
+async function takeOverOpenNewTabs() {
+  if (!chrome.tabs?.query) return;
+  const tabs = await chrome.tabs.query({}).catch(() => []);
+  for (const tab of tabs) await takeOverBrowserNewTab(tab);
 }
 
 // Coerce a sender or client-supplied tab descriptor into a minimal safe shape.
@@ -542,10 +573,9 @@ chrome.runtime.onInstalled.addListener((details) => {
     if (!result[STORAGE_KEY]) await saveState(emptyState());
     // Check initial storage quota after seeding
     await checkStorageQuota();
-    // Brave often keeps its own new-tab dashboard. Opening the planting page
-    // on first install means Chrome and Brave both get a working start screen.
+    await takeOverOpenNewTabs();
     if (details?.reason === 'install') {
-      await chrome.tabs.create({ url: chrome.runtime.getURL('newtab/index.html'), active: true });
+      await chrome.tabs.create({ url: plantingPageUrl(), active: true });
     }
   }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled', swallow: true })();
 });
@@ -712,8 +742,17 @@ chrome.commands?.onCommand?.addListener((command) => {
   }, { category: ERROR_CATEGORIES.MESSAGING, component: 'service-worker', function: 'commands.onCommand', swallow: true })();
 });
 
+chrome.tabs.onCreated?.addListener((tab) => {
+  return wrapWithErrorBoundary(async (tab) => {
+    await takeOverBrowserNewTab(tab);
+  }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onCreated', swallow: true })(tab);
+});
+chrome.runtime.onStartup?.addListener(() => {
+  wrapWithErrorBoundary(takeOverOpenNewTabs, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'onStartup', swallow: true })();
+});
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   return wrapWithErrorBoundary(async (tabId, changeInfo, tab) => {
+    if (await takeOverBrowserNewTab(tab)) return;
     if (changeInfo.status === 'complete' && tab.url) await observeTab(tabId, tab.url, tab.title, tab.openerTabId, tab.windowId);
   }, { category: ERROR_CATEGORIES.NAVIGATION, component: 'service-worker', function: 'tabs.onUpdated', swallow: true })(tabId, changeInfo, tab);
 });

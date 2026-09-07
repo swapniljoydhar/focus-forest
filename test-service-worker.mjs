@@ -5,7 +5,7 @@ const messages = [];
 const tabActions = [];
 const windowActions = [];
 const tabInfo = new Map();
-const listeners = { installed: [], message: [], updated: [], removed: [] };
+const listeners = { installed: [], message: [], updated: [], removed: [], created: [], startup: [] };
 
 globalThis.chrome = {
   storage: {
@@ -18,12 +18,15 @@ globalThis.chrome = {
     id: 'test',
     getURL(path) { return `chrome-extension://test/${path}`; },
     onInstalled: { addListener(fn) { listeners.installed.push(fn); } },
-    onMessage: { addListener(fn) { listeners.message.push(fn); } }
+    onMessage: { addListener(fn) { listeners.message.push(fn); } },
+    onStartup: { addListener(fn) { listeners.startup.push(fn); } }
   },
   windows: { async update(id, patch) { windowActions.push(['update', id, patch]); } },
   tabs: {
+    onCreated: { addListener(fn) { listeners.created.push(fn); } },
     onUpdated: { addListener(fn) { listeners.updated.push(fn); } },
     onRemoved: { addListener(fn) { listeners.removed.push(fn); } },
+    async query() { return [...tabInfo.values()].map((tab) => structuredClone(tab)); },
     async remove(id) { tabActions.push(['remove', id]); },
     async get(id) { const tab = tabInfo.get(id); if (!tab) throw new Error('No tab'); return structuredClone({ id, windowId: 1, ...tab }); },
     async update(id, patch) { const next = { ...(tabInfo.get(id) || { id, windowId: 1 }), ...patch }; tabInfo.set(id, next); tabActions.push(['update', id, patch]); },
@@ -298,5 +301,18 @@ await send({ type: 'UPDATE_SETTINGS', settings: { gentleDepth: 6, choiceDepth: 8
 const afterSettings = await send({ type: 'GET_SNAPSHOT' });
 assert.equal(afterSettings.settings.gentleDepth, 6, 'settings update should persist');
 assert.equal(afterSettings.settings.choiceDepth, 8, 'settings update should persist');
+
+tabActions.length = 0;
+await listeners.updated[0](901, { status: 'loading', url: 'brave://newtab/' }, { id: 901, url: 'brave://newtab/', pendingUrl: 'brave://newtab/' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 901 && action[2].url === 'chrome-extension://test/newtab/index.html'), true, 'Brave dashboard new tabs must be replaced by Focus Forest');
+tabActions.length = 0;
+await listeners.created[0]({ id: 902, pendingUrl: 'chrome://newtab', url: 'chrome://newtab' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 902 && action[2].url === 'chrome-extension://test/newtab/index.html'), true, 'Chrome new tabs must be replaced by Focus Forest when the override is skipped');
+tabActions.length = 0;
+await listeners.updated[0](903, { status: 'complete', url: 'https://example.com/' }, { id: 903, url: 'https://example.com/' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 903), false, 'ordinary pages must not be rewritten to the planting page');
+tabActions.length = 0;
+await listeners.updated[0](904, { status: 'complete', url: 'chrome://settings' }, { id: 904, url: 'chrome://settings' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 904), false, 'settings pages must not be rewritten to the planting page');
 
 console.log('service-worker behavioral tests passed');

@@ -16,7 +16,7 @@ Focus Forest is a Manifest V3 extension for Chromium. It loads the same unpacked
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select this `focus-forest` directory (the folder containing `manifest.json`).
-5. Click the Focus Forest toolbar icon and plant a mission, or open a new tab. Allow Focus Forest's new-tab override if the browser asks. In **Brave**, a new tab may still show Brave's dashboard — use the toolbar popup or **Open the planting page**. You do not need to turn Shields off.
+5. Open a new tab. Focus Forest replaces Chrome's new tab and Brave's dashboard with the planting page. You do not need to turn Shields off.
 
 After updating the files, click **Reload** on Focus Forest's extension card, then reopen the garden and refresh existing web pages so they receive the updated companion script.
 
@@ -57,7 +57,7 @@ Session data, URL/title metadata, navigation events, and compost items are store
 
 ## Permissions
 
-The extension uses local storage for gardens and does not request the redundant `tabs` permission. It uses declared HTTP(S) page access to render the mission chip and detect eligible link activations, plus `webNavigation` to support SPA history tracking on YouTube, Notion, Gmail, GitHub, and similar sites. Browser-internal, restricted, and other protected pages may not support the content script and degrade gracefully.
+The extension uses local storage for gardens and the `tabs` permission only to replace Chromium new-tab pages (including Brave's dashboard) with the planting screen. It uses declared HTTP(S) page access to render the mission chip and detect eligible link activations, plus `webNavigation` to support SPA history tracking on YouTube, Notion, Gmail, GitHub, and similar sites. Browser-internal, restricted, and other protected pages may not support the content script and degrade gracefully.
 
 ## Accessibility and agency
 
