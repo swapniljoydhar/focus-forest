@@ -536,12 +536,17 @@ async function importAllData(payload) {
   return { imported: true };
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
   wrapWithErrorBoundary(async () => {
     const result = await chrome.storage.local.get(STORAGE_KEY);
     if (!result[STORAGE_KEY]) await saveState(emptyState());
     // Check initial storage quota after seeding
     await checkStorageQuota();
+    // Brave often keeps its own new-tab dashboard. Opening the planting page
+    // on first install means Chrome and Brave both get a working start screen.
+    if (details?.reason === 'install') {
+      await chrome.tabs.create({ url: chrome.runtime.getURL('newtab/index.html'), active: true });
+    }
   }, { category: ERROR_CATEGORIES.STORAGE, component: 'service-worker', function: 'onInstalled', swallow: true })();
 });
 

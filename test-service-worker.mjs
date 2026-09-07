@@ -16,6 +16,7 @@ globalThis.chrome = {
   },
   runtime: {
     id: 'test',
+    getURL(path) { return `chrome-extension://test/${path}`; },
     onInstalled: { addListener(fn) { listeners.installed.push(fn); } },
     onMessage: { addListener(fn) { listeners.message.push(fn); } }
   },

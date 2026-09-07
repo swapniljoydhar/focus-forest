@@ -36,6 +36,8 @@ assert.match(treeRenderer, /empty-trunk/, 'the empty garden should include an op
 assert.match(popup, /safeRender\(\)\.catch/, 'popup startup must show a recovery state when messaging fails');
 assert.match(newtab, /safeInit\(\)\.catch/, 'New Tab startup must show a recovery state when messaging fails');
 assert.match(popup, /function: 'pause\.click', swallow: true/, 'popup pause listener must swallow async failures');
+assert.match(popup, /function: 'plant.submit', swallow: true/, 'popup plant listener must swallow async failures');
+assert.match(popup, /START_MISSION/, 'popup must be able to plant a mission without a new-tab override');
 assert.match(popup, /if \(!snap\?\.session\) return/, 'popup pause listener must tolerate a mission ending between reads');
 assert.match(newtab, /function: 'form\.submit', swallow: true/, 'New Tab submit listener must swallow async failures');
 assert.match(dashboard, /function: 'detail\.click', swallow: true/, 'dashboard detail listener must swallow async failures');

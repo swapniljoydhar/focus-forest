@@ -16,7 +16,7 @@ Focus Forest is a Manifest V3 extension for Chromium. It loads the same unpacked
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select this `focus-forest` directory (the folder containing `manifest.json`).
-5. Open a new tab and plant a mission. Allow Focus Forest's new-tab override if the browser asks.
+5. Click the Focus Forest toolbar icon and plant a mission, or open a new tab. Allow Focus Forest's new-tab override if the browser asks. In **Brave**, a new tab may still show Brave's dashboard — use the toolbar popup or **Open the planting page**. You do not need to turn Shields off.
 
 After updating the files, click **Reload** on Focus Forest's extension card, then reopen the garden and refresh existing web pages so they receive the updated companion script.
 
