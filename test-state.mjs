@@ -50,7 +50,8 @@ const {
   emptyState,
   loadState,
   saveState,
-  clearStateCache
+  clearStateCache,
+  makeId
 } = await import('./shared/state.js');
 
 function fireStorageChange(newValue, oldValue = undefined) {
