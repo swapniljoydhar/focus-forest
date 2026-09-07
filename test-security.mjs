@@ -12,7 +12,7 @@ const settings = fs.readFileSync(new URL('./settings/app.js', import.meta.url), 
 const state = fs.readFileSync(new URL('./shared/state.js', import.meta.url), 'utf8');
 
 assert.deepEqual(manifest.web_accessible_resources, [], 'the companion stylesheet should not be exposed to every web origin');
-assert.equal(manifest.permissions.includes('tabs'), false, 'the extension should not request the redundant tabs permission');
+assert.equal(manifest.permissions.includes('tabs'), true, 'tabs is required to replace Brave/Chrome new-tab pages that host_permissions cannot see');
 assert.match(content, /attachShadow\(\{\s*mode:\s*['"]closed['"]\s*\}\)/, 'the companion should use a closed shadow root');
 assert.match(content, /style\.textContent\s*=/, 'companion CSS should be owned by the isolated content script');
 assert.equal(content.includes('content/content.css'), false, 'companion must not depend on a web-accessible stylesheet');
@@ -36,6 +36,8 @@ assert.match(treeRenderer, /empty-trunk/, 'the empty garden should include an op
 assert.match(popup, /safeRender\(\)\.catch/, 'popup startup must show a recovery state when messaging fails');
 assert.match(newtab, /safeInit\(\)\.catch/, 'New Tab startup must show a recovery state when messaging fails');
 assert.match(popup, /function: 'pause\.click', swallow: true/, 'popup pause listener must swallow async failures');
+assert.match(popup, /function: 'plant.submit', swallow: true/, 'popup plant listener must swallow async failures');
+assert.match(popup, /START_MISSION/, 'popup must be able to plant a mission without a new-tab override');
 assert.match(popup, /if \(!snap\?\.session\) return/, 'popup pause listener must tolerate a mission ending between reads');
 assert.match(newtab, /function: 'form\.submit', swallow: true/, 'New Tab submit listener must swallow async failures');
 assert.match(dashboard, /function: 'detail\.click', swallow: true/, 'dashboard detail listener must swallow async failures');

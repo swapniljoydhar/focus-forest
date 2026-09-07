@@ -4,6 +4,19 @@ async function message(type, payload = {}) {
   return chrome.runtime.sendMessage({ type, ...payload });
 }
 
+async function activeTab() {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+function plantingPageUrl() {
+  return chrome.runtime.getURL('newtab/index.html');
+}
+
 const empty = document.querySelector('#empty');
 const active = document.querySelector('#active');
 const completion = document.querySelector('#completion');
@@ -89,6 +102,32 @@ function renderSafely() {
     empty.hidden = false;
   });
 }
+
+document.querySelector('#plant-form').addEventListener('submit', wrapWithErrorBoundary(async (event) => {
+  event.preventDefault();
+  const input = document.querySelector('#plant-input');
+  const status = document.querySelector('#plant-status');
+  const mission = input.value.trim();
+  if (!mission) { input.focus(); return; }
+  status.hidden = true;
+  try {
+    const tab = await activeTab();
+    await message('START_MISSION', {
+      mission,
+      tab: tab ? { id: tab.id, url: tab.url, title: tab.title, windowId: tab.windowId } : undefined
+    });
+    input.value = '';
+    await renderSafely();
+  } catch (error) {
+    logError(error, { category: ERROR_CATEGORIES.MESSAGING, function: 'plant.submit' });
+    status.hidden = false;
+    status.textContent = 'Could not start this mission. Try again.';
+  }
+}, { category: ERROR_CATEGORIES.MESSAGING, function: 'plant.submit', swallow: true }));
+
+document.querySelector('#open-planting').addEventListener('click', wrapWithErrorBoundary(async () => {
+  await chrome.tabs.create({ url: plantingPageUrl(), active: true });
+}, { category: ERROR_CATEGORIES.UI_RENDER, function: 'open-planting.click', swallow: true }));
 
 document.querySelector('#return').addEventListener('click', wrapWithErrorBoundary(() => message('GO_HOME'), { category: ERROR_CATEGORIES.MESSAGING, function: 'return.click', swallow: true }));
 

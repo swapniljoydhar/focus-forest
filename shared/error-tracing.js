@@ -1,3 +1,5 @@
+import './chromium-api.js';
+
 export const ERROR_CATEGORIES = {
   STORAGE: 'storage',
   MESSAGING: 'messaging',

@@ -5,7 +5,7 @@ const messages = [];
 const tabActions = [];
 const windowActions = [];
 const tabInfo = new Map();
-const listeners = { installed: [], message: [], updated: [], removed: [] };
+const listeners = { installed: [], message: [], updated: [], removed: [], created: [], startup: [] };
 
 globalThis.chrome = {
   storage: {
@@ -16,13 +16,17 @@ globalThis.chrome = {
   },
   runtime: {
     id: 'test',
+    getURL(path) { return `chrome-extension://test/${path}`; },
     onInstalled: { addListener(fn) { listeners.installed.push(fn); } },
-    onMessage: { addListener(fn) { listeners.message.push(fn); } }
+    onMessage: { addListener(fn) { listeners.message.push(fn); } },
+    onStartup: { addListener(fn) { listeners.startup.push(fn); } }
   },
   windows: { async update(id, patch) { windowActions.push(['update', id, patch]); } },
   tabs: {
+    onCreated: { addListener(fn) { listeners.created.push(fn); } },
     onUpdated: { addListener(fn) { listeners.updated.push(fn); } },
     onRemoved: { addListener(fn) { listeners.removed.push(fn); } },
+    async query() { return [...tabInfo.values()].map((tab) => structuredClone(tab)); },
     async remove(id) { tabActions.push(['remove', id]); },
     async get(id) { const tab = tabInfo.get(id); if (!tab) throw new Error('No tab'); return structuredClone({ id, windowId: 1, ...tab }); },
     async update(id, patch) { const next = { ...(tabInfo.get(id) || { id, windowId: 1 }), ...patch }; tabInfo.set(id, next); tabActions.push(['update', id, patch]); },
@@ -46,19 +50,24 @@ const inheritedMessage = Object.create({ type: 'CLEAR_DATA' });
 assert.equal(await rawSend(inheritedMessage, { id: 'test', url: 'chrome-extension://test/dashboard/index.html' }), null, 'inherited message fields must not bypass own-property validation');
 function session() { return store.focusForestState.sessions.find((s) => s.id === store.focusForestState.activeSessionId); }
 
-// Brave keeps the Chrome extension API/sender origin, but may expose brave:// new-tab URLs.
-for (const newTabUrl of ['brave://newtab', 'brave://newtab/']) {
-  await send({ type: 'START_MISSION', mission: 'Research in Brave', tab: { id: 801, url: newTabUrl, title: 'New Tab' } });
-  assert.equal(session().origin.url, newTabUrl, 'Brave new-tab placeholders should survive validation');
-  await send({ type: 'OBSERVE_PAGE', url: 'brave://settings', title: 'Settings' }, { id: 801 });
+// Chromium forks keep the chrome.* extension API and chrome-extension:// sender origin,
+// but expose their own new-tab placeholders (chrome://, brave://, edge://, opera://, vivaldi://).
+const chromiumNewTabs = [
+  'chrome://newtab', 'chrome://new-tab-page', 'brave://newtab', 'brave://newtab/',
+  'edge://newtab', 'opera://startpage', 'vivaldi://newtab', 'chrome://vivaldi-webui/startpage'
+];
+for (const newTabUrl of chromiumNewTabs) {
+  await send({ type: 'START_MISSION', mission: 'Research in Chromium', tab: { id: 801, url: newTabUrl, title: 'New Tab' } });
+  assert.equal(session().origin.url, newTabUrl, `${newTabUrl} should survive validation as a new-tab placeholder`);
+  await send({ type: 'OBSERVE_PAGE', url: 'chrome://settings', title: 'Settings' }, { id: 801 });
   assert.equal(session().origin.url, newTabUrl, 'restricted browser pages must not become the mission origin');
-  await send({ type: 'OBSERVE_PAGE', url: 'https://search.brave.com/search?q=trees', title: 'Brave Search' }, { id: 801 });
-  assert.equal(session().nodes.length, 1, 'the first Brave Search page replaces the placeholder, not an extra branch');
+  await send({ type: 'OBSERVE_PAGE', url: 'https://search.brave.com/search?q=trees', title: 'Search' }, { id: 801 });
+  assert.equal(session().nodes.length, 1, 'the first ordinary page replaces the placeholder, not an extra branch');
   assert.equal(session().nodes[0].depth, 0);
   assert.equal(session().origin.url, 'https://search.brave.com/search?q=trees');
   await send({ type: 'LINK_CLICK', url: 'https://example.com/trees', title: 'Trees' }, { id: 801 });
   await send({ type: 'OBSERVE_PAGE', url: 'https://example.com/trees', title: 'Trees' }, { id: 801 });
-  assert.equal(session().nodes.at(-1).depth, 1, 'a link from Brave Search should grow exactly one branch');
+  assert.equal(session().nodes.at(-1).depth, 1, 'a link from the first page should grow exactly one branch');
   await send({ type: 'CLEAR_DATA' });
 }
 tabInfo.delete(801);
@@ -292,5 +301,18 @@ await send({ type: 'UPDATE_SETTINGS', settings: { gentleDepth: 6, choiceDepth: 8
 const afterSettings = await send({ type: 'GET_SNAPSHOT' });
 assert.equal(afterSettings.settings.gentleDepth, 6, 'settings update should persist');
 assert.equal(afterSettings.settings.choiceDepth, 8, 'settings update should persist');
+
+tabActions.length = 0;
+await listeners.updated[0](901, { status: 'loading', url: 'brave://newtab/' }, { id: 901, url: 'brave://newtab/', pendingUrl: 'brave://newtab/' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 901 && action[2].url === 'chrome-extension://test/newtab/index.html'), true, 'Brave dashboard new tabs must be replaced by Focus Forest');
+tabActions.length = 0;
+await listeners.created[0]({ id: 902, pendingUrl: 'chrome://newtab', url: 'chrome://newtab' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 902 && action[2].url === 'chrome-extension://test/newtab/index.html'), true, 'Chrome new tabs must be replaced by Focus Forest when the override is skipped');
+tabActions.length = 0;
+await listeners.updated[0](903, { status: 'complete', url: 'https://example.com/' }, { id: 903, url: 'https://example.com/' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 903), false, 'ordinary pages must not be rewritten to the planting page');
+tabActions.length = 0;
+await listeners.updated[0](904, { status: 'complete', url: 'chrome://settings' }, { id: 904, url: 'chrome://settings' });
+assert.equal(tabActions.some((action) => action[0] === 'update' && action[1] === 904), false, 'settings pages must not be rewritten to the planting page');
 
 console.log('service-worker behavioral tests passed');
