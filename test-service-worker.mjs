@@ -46,19 +46,24 @@ const inheritedMessage = Object.create({ type: 'CLEAR_DATA' });
 assert.equal(await rawSend(inheritedMessage, { id: 'test', url: 'chrome-extension://test/dashboard/index.html' }), null, 'inherited message fields must not bypass own-property validation');
 function session() { return store.focusForestState.sessions.find((s) => s.id === store.focusForestState.activeSessionId); }
 
-// Brave keeps the Chrome extension API/sender origin, but may expose brave:// new-tab URLs.
-for (const newTabUrl of ['brave://newtab', 'brave://newtab/']) {
-  await send({ type: 'START_MISSION', mission: 'Research in Brave', tab: { id: 801, url: newTabUrl, title: 'New Tab' } });
-  assert.equal(session().origin.url, newTabUrl, 'Brave new-tab placeholders should survive validation');
-  await send({ type: 'OBSERVE_PAGE', url: 'brave://settings', title: 'Settings' }, { id: 801 });
+// Chromium forks keep the chrome.* extension API and chrome-extension:// sender origin,
+// but expose their own new-tab placeholders (chrome://, brave://, edge://, opera://, vivaldi://).
+const chromiumNewTabs = [
+  'chrome://newtab', 'chrome://new-tab-page', 'brave://newtab', 'brave://newtab/',
+  'edge://newtab', 'opera://startpage', 'vivaldi://newtab', 'chrome://vivaldi-webui/startpage'
+];
+for (const newTabUrl of chromiumNewTabs) {
+  await send({ type: 'START_MISSION', mission: 'Research in Chromium', tab: { id: 801, url: newTabUrl, title: 'New Tab' } });
+  assert.equal(session().origin.url, newTabUrl, `${newTabUrl} should survive validation as a new-tab placeholder`);
+  await send({ type: 'OBSERVE_PAGE', url: 'chrome://settings', title: 'Settings' }, { id: 801 });
   assert.equal(session().origin.url, newTabUrl, 'restricted browser pages must not become the mission origin');
-  await send({ type: 'OBSERVE_PAGE', url: 'https://search.brave.com/search?q=trees', title: 'Brave Search' }, { id: 801 });
-  assert.equal(session().nodes.length, 1, 'the first Brave Search page replaces the placeholder, not an extra branch');
+  await send({ type: 'OBSERVE_PAGE', url: 'https://search.brave.com/search?q=trees', title: 'Search' }, { id: 801 });
+  assert.equal(session().nodes.length, 1, 'the first ordinary page replaces the placeholder, not an extra branch');
   assert.equal(session().nodes[0].depth, 0);
   assert.equal(session().origin.url, 'https://search.brave.com/search?q=trees');
   await send({ type: 'LINK_CLICK', url: 'https://example.com/trees', title: 'Trees' }, { id: 801 });
   await send({ type: 'OBSERVE_PAGE', url: 'https://example.com/trees', title: 'Trees' }, { id: 801 });
-  assert.equal(session().nodes.at(-1).depth, 1, 'a link from Brave Search should grow exactly one branch');
+  assert.equal(session().nodes.at(-1).depth, 1, 'a link from the first page should grow exactly one branch');
   await send({ type: 'CLEAR_DATA' });
 }
 tabInfo.delete(801);

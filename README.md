@@ -1,4 +1,4 @@
-﻿# Focus Forest
+# Focus Forest
 
 Focus Forest is a calm, local-first Chromium extension that helps you return to intention when useful research gradually becomes wandering. It contains **no generative AI, no summarizer, no remote model, no embeddings, and no page-content classifier**. Its intelligence is a transparent branch model built only from browser navigation signals. It is not a domain blocker and does not judge whether a page is relevant. It observes how pages are reached, keeps the current mission visible, and offers a gentle moment of choice when a tracked branch becomes unusually deep.
 
@@ -8,9 +8,11 @@ Open a new tab and plant a mission such as "Compare laptops for university." The
 
 A garden view preserves completed missions locally. It shows what grew from the intention, where the path changed, and which curiosities were composted for later. The garden is a reflection, not a productivity score.
 
-## Install locally (desktop Brave or Chrome)
+## Install locally (any Chromium desktop browser)
 
-1. In **Brave**, open `brave://extensions`. In Chrome, use `chrome://extensions`.
+Focus Forest is a Manifest V3 extension for Chromium. It loads the same unpacked folder in Chrome, Brave, Edge, Opera, Vivaldi, Chromium, and other Chromium-based browsers.
+
+1. Open the extensions page: `chrome://extensions` (Chrome, Chromium, Arc), `brave://extensions` (Brave), `edge://extensions` (Edge), `opera://extensions` (Opera), or `vivaldi://extensions` (Vivaldi).
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select this `focus-forest` directory (the folder containing `manifest.json`).
@@ -18,14 +20,14 @@ A garden view preserves completed missions locally. It shows what grew from the 
 
 After updating the files, click **Reload** on Focus Forest's extension card, then reopen the garden and refresh existing web pages so they receive the updated companion script.
 
-### Brave notes
+### Chromium notes
 
-- Brave uses the Chromium extension format. The `chrome.*` API namespace, `chrome-extension://` sender URLs, and `chrome_url_overrides` manifest key are intentional; they should not be renamed to `brave.*`. See [Brave's extension support documentation](https://support.brave.app/hc/en-us/articles/360017909112-How-can-I-add-extensions-to-Brave).
-- Brave's `brave://newtab` placeholder is recognized, and Brave Search is covered by the navigation tests. The first ordinary web page becomes the mission root.
-- The companion runs on HTTP(S) websites, not `brave://settings`, `brave://extensions`, or other protected browser pages.
-- If the companion is missing on an ordinary website, check Focus Forest's site access and refresh that page after reloading the extension. Do not disable Shields globally as an installation step.
-- Another new-tab extension can control the same page; check which extension is enabled for that override if Focus Forest's planting screen does not appear.
-- Automated coverage uses mocked extension APIs and Chromium UI tests. A full, installed-extension walkthrough in a real Brave profile is still required; these checks do not claim Brave end-to-end certification.
+- Chromium browsers share the Chrome extension format. The `chrome.*` API namespace, `chrome-extension://` sender URLs, and `chrome_url_overrides` manifest key are intentional; they should not be renamed to `brave.*`, `edge.*`, or `opera.*`. Edge and Opera may also expose `browser.*`; Focus Forest uses `chrome.*` and falls back to `browser.*` when needed.
+- New-tab placeholders are recognized across Chromium flavors, including `chrome://newtab`, `chrome://new-tab-page`, `brave://newtab`, `edge://newtab`, `opera://startpage`, and `vivaldi://newtab`. The first ordinary web page becomes the mission root.
+- The companion runs on HTTP(S) websites, not `chrome://settings`, `brave://extensions`, `edge://settings`, or other protected browser pages.
+- If the companion is missing on an ordinary website, check Focus Forest's site access and refresh that page after reloading the extension. In Brave, do not disable Shields globally as an installation step.
+- Another new-tab extension, or the browser's own new-tab page setting, can control the same page. Check which extension is enabled for that override if Focus Forest's planting screen does not appear. Brave, Edge, and Opera may ask you to confirm replacing their new-tab page.
+- Automated coverage uses mocked extension APIs and Chromium UI tests. A full, installed-extension walkthrough in a real profile of each browser is still required; these checks do not claim end-to-end certification for every Chromium fork.
 
 ## File structure
 

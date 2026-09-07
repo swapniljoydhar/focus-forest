@@ -1,4 +1,4 @@
-// Import error tracing for quota monitoring logs
+import './chromium-api.js';
 import { logError, logWarning, logCritical, ERROR_CATEGORIES } from './error-tracing.js';
 
 export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
@@ -122,14 +122,57 @@ export function activeSession(state) {
 const SAFE_STATES = new Set(['normal', 'desaturated', 'interrupted', 'paused', 'pruned', 'composted']);
 const SAFE_CONFIDENCE = new Set(['direct', 'tab-inferred', 'external']);
 const SAFE_REASONS = new Set(['user_ended', 'mission_changed', 'browse_without_mission']);
-/** Accept only the new-tab placeholder, never other privileged browser pages. */
+/** Canonical fallback when a session origin is missing or unsafe. Chromium NTP aliases are accepted separately. */
+export const DEFAULT_NEW_TAB_URL = 'chrome://newtab';
+const NEW_TAB_HOSTS_BY_PROTOCOL = {
+  'chrome:': new Set(['newtab', 'new-tab-page', 'new-tab-page-third-party']),
+  'brave:': new Set(['newtab']),
+  'edge:': new Set(['newtab']),
+  'opera:': new Set(['newtab', 'startpage']),
+  'vivaldi:': new Set(['newtab', 'startpage']),
+  'chromium:': new Set(['newtab'])
+};
+
+function extensionRuntimeId() {
+  return typeof chrome !== 'undefined' && typeof chrome.runtime?.id === 'string' ? chrome.runtime.id : null;
+}
+
+/**
+ * Accept only Chromium new-tab placeholders, never settings/history/other privileged pages.
+ * Covers Chrome, Brave, Edge, Opera, Vivaldi, and generic Chromium.
+ */
 export function isBrowserNewTabUrl(value) {
-  return typeof value === 'string' && /^(?:chrome|brave):\/\/newtab\/?$/i.test(value);
+  if (typeof value !== 'string' || !value) return false;
+  try {
+    const url = new URL(value);
+    if (url.username || url.password || url.port) return false;
+    const protocol = url.protocol.toLowerCase();
+    const host = url.hostname.toLowerCase();
+    const path = url.pathname.replace(/\/+$/, '') || '';
+    if (protocol === 'chrome:' && host === 'vivaldi-webui' && path === '/startpage') return true;
+    const hosts = NEW_TAB_HOSTS_BY_PROTOCOL[protocol];
+    if (!hosts || !hosts.has(host)) return false;
+    return path === '';
+  } catch {
+    return false;
+  }
+}
+
+/** True when the URL is this extension's New Tab override page. */
+export function isExtensionNewTabUrl(value, extensionId = extensionRuntimeId()) {
+  if (typeof value !== 'string' || !extensionId) return false;
+  const match = /^chrome-extension:\/\/([a-z0-9-]+)\/newtab(?:\/|$)/i.exec(value);
+  return Boolean(match && match[1].toLowerCase() === String(extensionId).toLowerCase());
+}
+
+/** True when a stored origin is still a placeholder waiting for the first ordinary webpage. */
+export function isPlaceholderOriginUrl(value, extensionId = extensionRuntimeId()) {
+  return isBrowserNewTabUrl(value) || isExtensionNewTabUrl(value, extensionId);
 }
 
 /**
  * Validates a URL for safe session storage.
- * Accepts HTTP(S), Chrome/Brave new-tab placeholders, and the current extension origin.
+ * Accepts HTTP(S), Chromium new-tab placeholders, and the current extension origin.
  * @param {string} value - Raw URL string.
  * @returns {string|null} Safe URL or null if invalid.
  */
@@ -137,7 +180,7 @@ export function safeSessionUrl(value) {
   const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http;
   if (isBrowserNewTabUrl(raw)) return raw;
   const extensionMatch = /^chrome-extension:\/\/([a-z0-9-]+)\/(.*)$/i.exec(raw);
-  const extensionId = typeof chrome !== 'undefined' ? chrome.runtime?.id : null;
+  const extensionId = extensionRuntimeId();
   if (extensionMatch && extensionId && extensionMatch[1].toLowerCase() === String(extensionId).toLowerCase()) return raw.length <= LIMITS.URL ? raw : null;
   return null;
 }
@@ -162,7 +205,7 @@ function compactSession(session) {
   if (!session || typeof session !== 'object') return null;
   const id = compactText(session.id, 120); if (!id) return null;
   const status = session.status === 'completed' ? 'completed' : 'active';
-  return { id, mission: compactText(session.mission, 140), status, startedAt: Number.isFinite(session.startedAt) ? session.startedAt : Date.now(), endedAt: Number.isFinite(session.endedAt) ? session.endedAt : null, endReason: SAFE_REASONS.has(session.endReason) ? session.endReason : null, origin: { tabId: Number.isInteger(session.origin?.tabId) ? session.origin.tabId : null, windowId: Number.isInteger(session.origin?.windowId) ? session.origin.windowId : null, url: safeSessionUrl(session.origin?.url) || 'chrome://newtab', title: compactText(session.origin?.title || 'New Tab', LIMITS.TITLE) }, nodes: Array.isArray(session.nodes) ? session.nodes.slice(-LIMITS.NODES_PER_SESSION).map(compactNode).filter(Boolean) : [], events: Array.isArray(session.events) ? session.events.slice(-LIMITS.EVENTS_PER_SESSION).map(compactEvent).filter(Boolean) : [], pendingRedirects: Array.isArray(session.pendingRedirects) ? session.pendingRedirects.filter((entry) => Number.isInteger(entry?.tabId) && typeof entry?.parentId === 'string').slice(-4).map((entry) => ({ tabId: entry.tabId, parentId: compactText(entry.parentId, 120), createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now() })) : [], interventionPaused: Boolean(session.interventionPaused) };
+  return { id, mission: compactText(session.mission, 140), status, startedAt: Number.isFinite(session.startedAt) ? session.startedAt : Date.now(), endedAt: Number.isFinite(session.endedAt) ? session.endedAt : null, endReason: SAFE_REASONS.has(session.endReason) ? session.endReason : null, origin: { tabId: Number.isInteger(session.origin?.tabId) ? session.origin.tabId : null, windowId: Number.isInteger(session.origin?.windowId) ? session.origin.windowId : null, url: safeSessionUrl(session.origin?.url) || DEFAULT_NEW_TAB_URL, title: compactText(session.origin?.title || 'New Tab', LIMITS.TITLE) }, nodes: Array.isArray(session.nodes) ? session.nodes.slice(-LIMITS.NODES_PER_SESSION).map(compactNode).filter(Boolean) : [], events: Array.isArray(session.events) ? session.events.slice(-LIMITS.EVENTS_PER_SESSION).map(compactEvent).filter(Boolean) : [], pendingRedirects: Array.isArray(session.pendingRedirects) ? session.pendingRedirects.filter((entry) => Number.isInteger(entry?.tabId) && typeof entry?.parentId === 'string').slice(-4).map((entry) => ({ tabId: entry.tabId, parentId: compactText(entry.parentId, 120), createdAt: Number.isFinite(entry.createdAt) ? entry.createdAt : Date.now() })) : [], interventionPaused: Boolean(session.interventionPaused) };
 }
 
 /**
@@ -294,9 +337,11 @@ if (typeof chrome !== 'undefined' && chrome.storage?.onChanged?.addListener) {
   });
 }
 
-// Periodic storage quota check every 5 minutes to catch gradual accumulation
-// Only runs in service worker context where chrome.alarms is available
-if (typeof chrome !== 'undefined' && chrome.alarms) {
+// Periodic storage quota check every 5 minutes to catch gradual accumulation.
+// chrome.alarms is also visible on extension pages in Chromium, so limit this
+// to the background service worker to avoid duplicate alarms from the garden.
+const isExtensionServiceWorker = typeof ServiceWorkerGlobalScope !== 'undefined' && typeof self !== 'undefined' && self instanceof ServiceWorkerGlobalScope;
+if (typeof chrome !== 'undefined' && chrome.alarms && isExtensionServiceWorker) {
   chrome.alarms.create('storageQuotaCheck', { periodInMinutes: 5 });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === 'storageQuotaCheck') {

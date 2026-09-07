@@ -1,4 +1,4 @@
-import { LIMITS, SCHEMA_VERSION, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, emptyState, getDepthState, isBrowserNewTabUrl, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota, normalizeState } from '../shared/state.js';
+import { LIMITS, SCHEMA_VERSION, STORAGE_KEY, THRESHOLDS, activeSession, clearStateCache, compactText, DEFAULT_NEW_TAB_URL, emptyState, getDepthState, isPlaceholderOriginUrl, isSearchUrl, loadState, makeId, normalizeSettings, safeHttpUrl, safeSessionUrl, saveState, checkStorageQuota, normalizeState } from '../shared/state.js';
 import { logError, ERROR_CATEGORIES, wrapMutationWithErrorBoundary, wrapWithErrorBoundary } from '../shared/error-tracing.js';
 
 const pendingBranches = new Map();
@@ -164,7 +164,8 @@ function sameOriginUrl(actual, expected) {
 }
 function isExtensionPageSender(sender) {
   const id = chrome.runtime?.id;
-  return typeof id === 'string' && typeof sender?.url === 'string' && sender.url.startsWith(`chrome-extension://${id}/`);
+  if (typeof id !== 'string' || typeof sender?.url !== 'string') return false;
+  return sender.url.toLowerCase().startsWith(`chrome-extension://${id.toLowerCase()}/`);
 }
 
 // Coerce a sender or client-supplied tab descriptor into a minimal safe shape.
@@ -302,9 +303,9 @@ async function observeTab(tabId, rawUrl, rawTitle, openerTabId, windowId) {
   return mutate((state) => {
     const session = activeSession(state); if (!session || !url) return NO_CHANGE;
     const current = nodeForTab(session, tabId);
-    // The origin is unset on a Chrome/Brave new tab or our own New Tab page.
+    // The origin is unset on a Chromium new tab (Chrome, Brave, Edge, Opera, Vivaldi) or our own New Tab page.
     const originUrl = session.origin?.url || '';
-    const originNotSet = isBrowserNewTabUrl(originUrl) || /^chrome-extension:\/\/[^/]*\/newtab\//i.test(originUrl) || session.nodes.length === 1 && !session.nodes[0].url.startsWith('http');
+    const originNotSet = isPlaceholderOriginUrl(originUrl) || session.nodes.length === 1 && !session.nodes[0].url.startsWith('http');
     if (originNotSet) {
       const root = session.nodes[0] || session.nodes.at(-1);
       if (root) { attachTab(root, tabId); root.url = url; root.title = title; root.firstSeenAt = Date.now(); root.relationshipConfidence = 'direct'; }
@@ -744,8 +745,8 @@ async function syncSettingsToCloud() {
   }
 }
 
-if (chrome.storage?.sync?.onChanged) {
-  chrome.storage.sync.onChanged.addListener((changes, area) => {
+if (chrome.storage?.onChanged?.addListener) {
+  chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync' || !changes[SETTINGS_SYNC_KEY]) return;
     wrapWithErrorBoundary(async () => {
       const remote = changes[SETTINGS_SYNC_KEY].newValue;

@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert';
+import assert from 'node:assert';
 import { describe, it } from 'node:test';
 
 const storage = {};
@@ -36,6 +36,8 @@ const {
   STORAGE_KEY,
   isSearchUrl,
   isBrowserNewTabUrl,
+  isExtensionNewTabUrl,
+  isPlaceholderOriginUrl,
   safeHttpUrl,
   safeSessionUrl,
   canonicalUrl,
@@ -124,17 +126,29 @@ describe('shared/state.js core functions', () => {
     assert.strictEqual(safeHttpUrl(`https://example.com/${'x'.repeat(LIMITS.URL)}`), null);
   });
 
-  it('recognizes Brave new tabs without accepting arbitrary privileged URLs', () => {
-    for (const url of ['brave://newtab', 'brave://newtab/', 'chrome://newtab', 'chrome://newtab/']) {
-      assert.strictEqual(isBrowserNewTabUrl(url), true);
+  it('recognizes Chromium new tabs without accepting arbitrary privileged URLs', () => {
+    const accepted = [
+      'chrome://newtab', 'chrome://newtab/', 'chrome://new-tab-page', 'chrome://new-tab-page/',
+      'chrome://new-tab-page-third-party', 'brave://newtab', 'brave://newtab/', 'edge://newtab',
+      'edge://newtab/', 'opera://startpage', 'opera://newtab', 'vivaldi://newtab', 'vivaldi://startpage',
+      'chromium://newtab', 'chrome://vivaldi-webui/startpage'
+    ];
+    for (const url of accepted) {
+      assert.strictEqual(isBrowserNewTabUrl(url), true, url);
       assert.strictEqual(safeSessionUrl(url), url);
       assert.strictEqual(safeHttpUrl(url), null, 'internal tabs must never become ordinary browsing pages');
     }
     for (const url of ['brave://settings', 'brave://history', 'brave://newtab.evil/', 'brave://newtab/settings',
-      'brave://user@newtab/', 'brave://newtab:80/', 'chrome://newtab/other', 'brave-extension://test/newtab/index.html']) {
-      assert.strictEqual(isBrowserNewTabUrl(url), false);
+      'brave://user@newtab/', 'brave://newtab:80/', 'chrome://newtab/other', 'brave-extension://test/newtab/index.html',
+      'edge://settings', 'edge://newtab/settings', 'opera://settings', 'vivaldi://settings',
+      'chrome://settings', 'chrome://extensions', 'chrome://vivaldi-webui/settings']) {
+      assert.strictEqual(isBrowserNewTabUrl(url), false, url);
       assert.strictEqual(safeSessionUrl(url), null);
     }
+    assert.strictEqual(isExtensionNewTabUrl('chrome-extension://test/newtab/index.html'), true);
+    assert.strictEqual(isPlaceholderOriginUrl('edge://newtab'), true);
+    assert.strictEqual(isPlaceholderOriginUrl('chrome-extension://test/newtab/index.html'), true);
+    assert.strictEqual(isExtensionNewTabUrl('chrome-extension://other/newtab/index.html'), false);
   });
 
   it('safeSessionUrl accepts only the current extension origin or new-tab placeholder', () => {

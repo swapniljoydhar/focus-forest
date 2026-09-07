@@ -1,5 +1,6 @@
 (() => {
-  // Browser-internal pages (including Brave) and extension pages are not websites.
+  if (typeof globalThis.chrome === 'undefined' && typeof globalThis.browser !== 'undefined') globalThis.chrome = globalThis.browser;
+  // Browser-internal pages (including Chromium forks) and extension pages are not websites.
   if (!['http:', 'https:'].includes(location.protocol)) return;
   
   // --- Resilience: Prevent Duplicate Injection ---
