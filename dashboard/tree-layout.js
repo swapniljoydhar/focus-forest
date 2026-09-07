@@ -1,161 +1,113 @@
 const VIEWBOX_WIDTH = 900;
-const MIN_X = 72;
-const MAX_X = VIEWBOX_WIDTH - MIN_X;
 const CENTER_X = VIEWBOX_WIDTH / 2;
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-const MODES = {
-  seed: { height: 300, baseY: 258, gap: 76 },
-  sapling: { height: 360, baseY: 314, gap: 82 },
-  canopy: { height: 470, baseY: 414, gap: 88 },
-  deep: { height: 560, baseY: 500, gap: 88 }
+// The silhouette is an illustration, not a graph stretched into a tree shape.
+// Pages sit inside its crown; the true parent graph is retained for path tracing.
+const STAGES = {
+  empty: { height: 470, baseY: 374, crownY: 208, rx: 0, ry: 0, boleWidth: 16, viewX: 205, viewWidth: 490 },
+  seed: { height: 520, baseY: 437, crownY: 247, rx: 139, ry: 111, boleWidth: 31, viewX: 195, viewWidth: 510 },
+  sapling: { height: 560, baseY: 479, crownY: 245, rx: 209, ry: 144, boleWidth: 43, viewX: 140, viewWidth: 620 },
+  canopy: { height: 600, baseY: 518, crownY: 251, rx: 268, ry: 173, boleWidth: 56, viewX: 90, viewWidth: 720 },
+  deep: { height: 620, baseY: 536, crownY: 261, rx: 296, ry: 185, boleWidth: 61, viewX: 65, viewWidth: 770 }
 };
 
-function finite(value, fallback) { return Number.isFinite(value) ? value : fallback; }
-function depthOf(node) { return Math.max(0, Math.floor(finite(node?.depth, 0))); }
+function depthOf(node) { return Math.max(0, Math.floor(Number.isFinite(node?.depth) ? node.depth : 0)); }
 function nodeOrder(a, b) {
-  const time = finite(a?.firstSeenAt, 0) - finite(b?.firstSeenAt, 0);
-  return time || String(a?.id || '').localeCompare(String(b?.id || ''));
+  return (Number(a.firstSeenAt) || 0) - (Number(b.firstSeenAt) || 0) || a.id.localeCompare(b.id);
 }
-function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
-function branchWidth(depth) { return Math.max(2.2, 8.5 - (Math.max(1, depth) - 1) * 1.15); }
 function modeFor(nodes, maxDepth) {
   if (nodes.length <= 1) return 'seed';
-  if (maxDepth <= 1 && nodes.length <= 5) return 'sapling';
-  if (maxDepth <= 3 && nodes.length <= 18) return 'canopy';
+  if (nodes.length <= 5 && maxDepth <= 2) return 'sapling';
+  if (nodes.length <= 18 && maxDepth <= 4) return 'canopy';
   return 'deep';
 }
-function labelPlacement(point, nodeId, root = false) {
-  const side = point.x >= CENTER_X ? 1 : -1;
-  const offset = root ? 18 : 16;
-  const rawX = point.x + side * offset;
-  const x = clamp(rawX, 18, VIEWBOX_WIDTH - 18);
-  return { nodeId, x, y: root ? point.y + 35 : point.y + 4, anchor: x >= CENTER_X ? 'end' : 'start' };
+export function branchWidth(depth) { return Math.max(2, 5 - Math.max(0, depth - 1) * 0.35); }
+export function labelPlacement(point, nodeId, root = false) {
+  return { nodeId, x: Math.max(200, Math.min(700, point.x)), y: point.y + (root ? 62 : 39), anchor: 'middle' };
 }
-function edgePath(parent, child, depth, nodeId) {
+export function treeStage(mode = 'sapling') {
+  const config = STAGES[mode] || STAGES.sapling;
+  return {
+    mode: Object.hasOwn(STAGES, mode) ? mode : 'sapling', width: VIEWBOX_WIDTH, height: config.height,
+    baseY: config.baseY,
+    viewBox: { x: config.viewX, y: 0, width: config.viewWidth, height: config.height },
+    crown: { x: CENTER_X, y: config.crownY, rx: config.rx, ry: config.ry },
+    trunk: { x: CENTER_X, baseY: config.baseY, rootY: config.baseY - 42,
+      forkY: config.crownY + config.ry * 0.66, boleWidth: config.boleWidth }
+  };
+}
+function edgePath(parent, child) {
   const dx = child.x - parent.x;
-  const bend = Math.abs(dx) < 12 ? ((String(nodeId).length % 2 ? 1 : -1) * 18) : 0;
-  if (depth === 1) {
-    const c1x = parent.x + dx * 0.36;
-    const c2x = child.x - dx * 0.24;
-    return `M${parent.x.toFixed(2)} ${parent.y.toFixed(2)} C${c1x.toFixed(2)} ${(parent.y + 2).toFixed(2)}, ${c2x.toFixed(2)} ${(child.y - 2).toFixed(2)}, ${child.x.toFixed(2)} ${child.y.toFixed(2)}`;
-  }
-  const rise = Math.max(28, parent.y - child.y);
-  const c1x = parent.x + dx * 0.16 + bend;
-  const c2x = child.x - dx * 0.18 + bend;
-  return `M${parent.x.toFixed(2)} ${(parent.y - 10).toFixed(2)} C${c1x.toFixed(2)} ${(parent.y - rise * 0.46).toFixed(2)}, ${c2x.toFixed(2)} ${(child.y + rise * 0.46).toFixed(2)}, ${child.x.toFixed(2)} ${(child.y + 10).toFixed(2)}`;
+  const dy = child.y - parent.y;
+  const bow = Math.max(12, Math.min(38, Math.abs(dx) * 0.2));
+  return `M${parent.x.toFixed(2)} ${parent.y.toFixed(2)} C${(parent.x + dx * .25).toFixed(2)} ${(parent.y + dy * .35 - bow).toFixed(2)}, ${(child.x - dx * .3).toFixed(2)} ${(child.y - dy * .2 + bow).toFixed(2)}, ${child.x.toFixed(2)} ${child.y.toFixed(2)}`;
 }
 
 export function layoutTree(inputNodes = []) {
-  const nodes = Array.isArray(inputNodes) ? inputNodes.filter((node) => node && typeof node.id === 'string') : [];
-  if (!nodes.length) return { mode: 'empty', width: VIEWBOX_WIDTH, height: 300, baseY: 258, root: null, positions: new Map(), parentById: new Map(), children: new Map(), edges: [], labels: [], trunk: null, maxDepth: 0 };
-
-  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-  const root = nodes.find((node) => depthOf(node) === 0) || nodes[0];
-  const rootId = root.id;
+  const valid = Array.isArray(inputNodes) ? inputNodes.filter(node => node && typeof node.id === 'string' && node.id) : [];
+  const nodes = [...new Map(valid.map(node => [node.id, node])).values()];
+  const empty = { ...treeStage('empty'), nodes: [], root: null, positions: new Map(), parentById: new Map(),
+    parentAnchors: new Map(), children: new Map(), edges: [], labels: [], maxDepth: 0 };
+  if (!nodes.length) return empty;
+  const nodeMap = new Map(nodes.map(node => [node.id, node]));
+  const root = nodes.find(node => depthOf(node) === 0) || nodes[0];
   const parentById = new Map();
-  const parentAnchors = new Map();
+  nodes.forEach(node => {
+    if (node.id === root.id) return;
+    const parent = node.parentId !== node.id && nodeMap.has(node.parentId) ? node.parentId : root.id;
+    parentById.set(node.id, parent);
+  });
+  // Repair only the visual topology; never change the user's historical data.
+  const resolved = new Set([root.id]);
+  nodes.forEach(node => {
+    let id = node.id;
+    const path = new Set();
+    while (!resolved.has(id)) {
+      if (path.has(id)) { parentById.set(id, root.id); break; }
+      path.add(id);
+      id = parentById.get(id) || root.id;
+    }
+    path.forEach(id => resolved.add(id));
+  });
   const children = new Map();
-
-  nodes.forEach((node) => {
-    if (node.id === rootId) return;
-    const candidate = typeof node.parentId === 'string' && node.parentId !== node.id && nodeMap.has(node.parentId) ? node.parentId : rootId;
-    parentById.set(node.id, candidate);
-    if (!children.has(candidate)) children.set(candidate, []);
-    children.get(candidate).push(node);
+  parentById.forEach((parent, id) => {
+    if (!children.has(parent)) children.set(parent, []);
+    children.get(parent).push(nodeMap.get(id));
   });
-  children.forEach((list) => list.sort(nodeOrder));
-
-  const weights = new Map();
-  const weight = (id) => {
-    if (weights.has(id)) return weights.get(id);
-    const total = (children.get(id) || []).reduce((sum, child) => sum + weight(child.id), 0) + 1;
-    weights.set(id, total);
-    return total;
-  };
-  weight(rootId);
-
-  const maxDepth = Math.max(0, ...nodes.map(depthOf));
-  const mode = modeFor(nodes, maxDepth);
-  const config = MODES[mode];
-  const positions = new Map([[rootId, { x: CENTER_X, y: config.baseY - 28 }]]);
-  const primaryY = config.baseY - config.gap + 8;
-  const forkY = primaryY - 8;
-  const edges = [];
-
-  function placeChildren(parentId, left, right, depth) {
-    const list = children.get(parentId) || [];
-    if (!list.length) return;
-    const total = list.reduce((sum, child) => sum + weight(child.id), 0);
-    let cursor = left;
-    list.forEach((child) => {
-      const span = (right - left) * (weight(child.id) / total);
-      const inset = Math.min(24, Math.max(8, span * 0.12));
-      const childLeft = cursor + inset;
-      const childRight = cursor + span - inset;
-      const point = { x: clamp((childLeft + childRight) / 2, MIN_X, MAX_X), y: depth === 1 ? primaryY : config.baseY - depth * config.gap };
-      positions.set(child.id, point);
-      const parent = positions.get(parentId) || positions.get(rootId);
-      const branchOrigin = parentId === rootId ? { x: CENTER_X, y: forkY } : parent;
-      parentAnchors.set(child.id, branchOrigin);
-      edges.push({ nodeId: child.id, parentId, path: edgePath(branchOrigin, point, depth, child.id), width: branchWidth(depth), depth, kind: depth === 1 ? 'primary' : 'secondary' });
-      const childSpan = Math.max(34, (childRight - childLeft) * 0.88);
-      placeChildren(child.id, point.x - childSpan / 2, point.x + childSpan / 2, depth + 1);
-      cursor += span;
-    });
+  children.forEach(list => list.sort(nodeOrder));
+  const levels = new Map();
+  const ordered = [];
+  function visit(id, level) {
+    levels.set(id, level);
+    if (id !== root.id) ordered.push(nodeMap.get(id));
+    (children.get(id) || []).forEach(child => visit(child.id, level + 1));
   }
-
-  placeChildren(rootId, MIN_X, MAX_X, 1);
-  nodes.forEach((node, index) => {
-    if (positions.has(node.id)) return;
-    const parentId = parentById.get(node.id) || rootId;
-    const parent = positions.get(parentId) || positions.get(rootId);
-    const point = { x: clamp(parent.x + ((index % 3) - 1) * 24, MIN_X, MAX_X), y: parent.y - config.gap };
-    positions.set(node.id, point);
-    const branchOrigin = parentId === rootId ? { x: CENTER_X, y: forkY } : parent;
-    parentAnchors.set(node.id, branchOrigin);
-    const depth = depthOf(node);
-    edges.push({ nodeId: node.id, parentId, path: edgePath(branchOrigin, point, depth, node.id), width: branchWidth(depth), depth, kind: depth === 1 ? 'primary' : 'secondary' });
+  visit(root.id, 0);
+  const maxDepth = Math.max(...levels.values());
+  const stage = treeStage(modeFor(nodes, maxDepth));
+  const { crown, trunk } = stage;
+  const positions = new Map([[root.id, { x: trunk.x, y: trunk.rootY, angle: 0 }]]);
+  // Sunflower packing fills a rounded crown even for a single long browsing
+  // chain. Depth is data, not a reason to turn the artwork into a vertical pole.
+  ordered.forEach((node, index) => {
+    const radius = .24 + .64 * Math.sqrt((index + .5) / Math.max(3, ordered.length));
+    const angle = -2.32 + index * GOLDEN_ANGLE;
+    positions.set(node.id, {
+      x: crown.x + Math.cos(angle) * crown.rx * .82 * radius,
+      y: crown.y + Math.sin(angle) * crown.ry * .78 * radius,
+      angle: Math.cos(angle) * 32
+    });
   });
-
-  const labelCandidates = nodes
-    .filter((node) => depthOf(node) <= 1 || nodes.length <= 6)
-    .map((node) => labelPlacement(positions.get(node.id), node.id, node.id === rootId))
-    .sort((a, b) => a.y - b.y || a.x - b.x);
-  const labels = [];
-  labelCandidates.forEach((candidate) => {
-    const crowded = labels.some((kept) => kept.anchor === candidate.anchor && Math.abs(kept.y - candidate.y) < 18 && Math.abs(kept.x - candidate.x) < 78);
-    if (!crowded || candidate.nodeId === rootId) labels.push(candidate);
+  const parentAnchors = new Map();
+  const edges = ordered.map(node => {
+    const parentId = parentById.get(node.id);
+    const parent = parentId === root.id ? { x: trunk.x, y: trunk.forkY } : positions.get(parentId);
+    parentAnchors.set(node.id, parent);
+    const depth = levels.get(node.id);
+    return { nodeId: node.id, parentId, depth, kind: depth === 1 ? 'primary' : 'secondary',
+      width: branchWidth(depth), path: edgePath(parent, positions.get(node.id)) };
   });
-
-  const sparse = mode === 'seed' || mode === 'sapling';
-  const rootY = positions.get(rootId).y;
-  const rootFlare = sparse ? [
-    { side: 'left', d: `M${(CENTER_X - 5).toFixed(2)} ${config.baseY.toFixed(2)} C${(CENTER_X - 18).toFixed(2)} ${(config.baseY - 2).toFixed(2)}, ${(CENTER_X - 28).toFixed(2)} ${(config.baseY - 13).toFixed(2)}, ${(CENTER_X - 42).toFixed(2)} ${(config.baseY - 9).toFixed(2)}` },
-    { side: 'right', d: `M${(CENTER_X + 5).toFixed(2)} ${config.baseY.toFixed(2)} C${(CENTER_X + 19).toFixed(2)} ${(config.baseY - 1).toFixed(2)}, ${(CENTER_X + 31).toFixed(2)} ${(config.baseY - 12).toFixed(2)}, ${(CENTER_X + 48).toFixed(2)} ${(config.baseY - 6).toFixed(2)}` }
-  ] : [];
-  const shoots = sparse ? [
-    { side: 'left', d: `M${(CENTER_X - 7).toFixed(2)} ${(forkY + 22).toFixed(2)} C${(CENTER_X - 11).toFixed(2)} ${(forkY + 5).toFixed(2)}, ${(CENTER_X - 24).toFixed(2)} ${(forkY - 15).toFixed(2)}, ${(CENTER_X - 38).toFixed(2)} ${(forkY - 32).toFixed(2)}` },
-    { side: 'right', d: `M${(CENTER_X + 5).toFixed(2)} ${(forkY + 18).toFixed(2)} C${(CENTER_X + 18).toFixed(2)} ${(forkY + 2).toFixed(2)}, ${(CENTER_X + 26).toFixed(2)} ${(forkY - 21).toFixed(2)}, ${(CENTER_X + 54).toFixed(2)} ${(forkY - 43).toFixed(2)}` }
-  ] : [];
-  const buds = sparse ? [
-    { side: 'left', x: CENTER_X - 38, y: forkY - 32, angle: -54, scale: 0.9 },
-    { side: 'right', x: CENTER_X + 54, y: forkY - 43, angle: 28, scale: 1.05 }
-  ] : [];
-  return {
-    mode,
-    width: VIEWBOX_WIDTH,
-    height: config.height,
-    baseY: config.baseY,
-    root,
-    positions,
-    parentById,
-    children,
-    edges,
-    labels,
-    trunk: { x: CENTER_X, baseY: config.baseY, rootY, forkY, primaryY, shootY: mode === 'seed' ? forkY - 28 : null, boleWidth: sparse ? 26 : 22, rootFlare, shoots, buds },
-    parentAnchors,
-    maxDepth
-  };
+  return { ...stage, nodes, root, positions, parentById, parentAnchors, children, edges,
+    labels: [labelPlacement(positions.get(root.id), root.id, true)], maxDepth };
 }
-
-export { branchWidth, labelPlacement };

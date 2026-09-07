@@ -1,80 +1,106 @@
 import assert from 'node:assert/strict';
-import { layoutTree } from './dashboard/tree-layout.js';
+import { layoutTree, treeStage } from './dashboard/tree-layout.js';
 
 function node(id, depth, parentId = null, extra = {}) {
   return { id, depth, parentId, title: id, state: 'normal', ...extra };
 }
-
-function assertFinitePoint(point, label) {
-  assert.ok(point && Number.isFinite(point.x) && Number.isFinite(point.y), `${label} should have finite coordinates`);
-}
-
 function assertConnected(tree, nodes) {
-  const rootId = tree.root.id;
-  assert.equal(tree.edges.length, Math.max(0, nodes.length - 1), 'every non-root node should have one visible edge');
+  assert.equal(tree.edges.length, Math.max(0, nodes.length - 1), 'each non-root page retains its actual parent edge');
   for (const item of nodes) {
-    assertFinitePoint(tree.positions.get(item.id), `position for ${item.id}`);
-    if (item.id !== rootId) {
-      assert.ok(tree.edges.some((edge) => edge.nodeId === item.id && edge.parentId === tree.parentById.get(item.id)), `${item.id} should connect to its resolved parent`);
+    const point = tree.positions.get(item.id);
+    assert.ok(point && Number.isFinite(point.x) && Number.isFinite(point.y));
+    if (item.id !== tree.root.id) {
+      const edge = tree.edges.find(edge => edge.nodeId === item.id);
+      assert.equal(edge.parentId, tree.parentById.get(item.id));
+      assert.ok(edge.path.includes('C') && edge.width > 0, 'trail edges must be curved and visible when selected');
     }
   }
 }
+function assertInsideCrown(tree) {
+  for (const item of tree.nodes) {
+    const point = tree.positions.get(item.id);
+    const { x, y, width, height } = tree.viewBox;
+    assert.ok(point.x - 29 >= x && point.x + 29 <= x + width, 'hit areas must fit horizontally');
+    assert.ok(point.y - 29 >= y && point.y + 29 <= y + height, 'hit areas must fit vertically');
+    if (item.id === tree.root.id) continue;
+    const dx = (point.x - tree.crown.x) / tree.crown.rx;
+    const dy = (point.y - tree.crown.y) / tree.crown.ry;
+    assert.ok(dx * dx + dy * dy < .6, 'page leaves must sit inside the rounded foliage, not beyond the canopy');
+  }
+}
 
+assert.equal(layoutTree().mode, 'empty');
+assert.equal(layoutTree(null).root, null);
+assert.equal(layoutTree([null, { id: '' }]).nodes.length, 0);
 const seed = [node('root', 0)];
 const seedTree = layoutTree(seed);
 assert.equal(seedTree.mode, 'seed');
-assert.equal(seedTree.root.id, 'root');
-assert.equal(seedTree.positions.get('root').x, 450, 'the root should be centered');
-assert.ok(seedTree.positions.get('root').y > 180, 'the root should sit in the lower tree zone');
-assert.ok(seedTree.trunk && seedTree.trunk.forkY < seedTree.trunk.rootY, 'a seed still needs a visible bole and an upper trunk fork');
-assert.ok(seedTree.trunk.boleWidth >= 18, 'the sparse bole should be visibly substantial');
-assert.ok(seedTree.trunk.rootFlare && seedTree.trunk.rootFlare.length >= 2, 'the sparse tree should be visibly planted with a root flare');
-assert.equal(seedTree.trunk.buds.length, 2, 'the sapling should expose two visible leaf-bud anchors');
-assert.ok(seedTree.trunk.buds.some((bud) => bud.side === 'left') && seedTree.trunk.buds.some((bud) => bud.side === 'right'), 'buds should exist on both sides of the sapling');
-assert.notEqual(Math.abs(seedTree.trunk.buds[0].x - seedTree.trunk.x), Math.abs(seedTree.trunk.buds[1].x - seedTree.trunk.x), 'sapling buds should be asymmetrically placed');
+assert.equal(seedTree.positions.get('root').x, 450);
+assert.ok(seedTree.crown.rx > 100 && seedTree.crown.ry > 100, 'even the first planted tree has a recognizable leafy crown');
+assert.ok(seedTree.trunk.boleWidth > 20, 'a young tree has a substantial tapered trunk');
+assert.ok(seedTree.trunk.rootY > seedTree.crown.y + seedTree.crown.ry, 'the root is below the foliage');
 assertConnected(seedTree, seed);
+assertInsideCrown(seedTree);
 
 const sapling = [node('root', 0), node('leaf-a', 1, 'root')];
 const saplingTree = layoutTree(sapling);
 assert.equal(saplingTree.mode, 'sapling');
+assert.ok(saplingTree.crown.rx > seedTree.crown.rx, 'the silhouette fills out as browsing grows');
 assertConnected(saplingTree, sapling);
-assert.ok(saplingTree.edges[0].path.includes('C'), 'a child edge should be curved rather than a straight graph connector');
-assert.ok(saplingTree.edges[0].path.startsWith(`M450.00 ${saplingTree.trunk.forkY.toFixed(2)}`), 'primary limbs should begin at the trunk fork');
-assert.ok(saplingTree.positions.get('leaf-a').y < saplingTree.positions.get('root').y, 'growth should rise upward');
+assertInsideCrown(saplingTree);
+assert.ok(saplingTree.edges[0].path.startsWith(`M450.00 ${saplingTree.trunk.forkY.toFixed(2)}`), 'root paths begin at the physical trunk fork');
+assert.ok(saplingTree.positions.get('leaf-a').y < saplingTree.trunk.rootY);
 
-const canopy = [
-  node('root', 0),
-  node('left', 1, 'root'), node('right', 1, 'root'),
-  node('left-deep', 2, 'left'), node('right-deep', 2, 'right'),
-  node('right-tip', 3, 'right-deep')
-];
+const canopy = [node('root', 0), node('left', 1, 'root'), node('right', 1, 'root'),
+  node('left-deep', 2, 'left'), node('right-deep', 2, 'right'), node('right-tip', 3, 'right-deep')];
 const canopyTree = layoutTree(canopy);
 assert.equal(canopyTree.mode, 'canopy');
+assert.ok(canopyTree.crown.rx > saplingTree.crown.rx);
 assertConnected(canopyTree, canopy);
-assert.ok(canopyTree.positions.get('left').x < canopyTree.positions.get('root').x);
-assert.ok(canopyTree.positions.get('right').x > canopyTree.positions.get('root').x);
-assert.equal(canopyTree.positions.get('left').y, canopyTree.positions.get('right').y, 'primary limbs should share a horizontal branch level');
-assert.equal(canopyTree.edges.filter((edge) => edge.depth === 1).every((edge) => edge.kind === 'primary'), true, 'first-level edges should be explicit primary limbs');
-assert.ok(canopyTree.parentAnchors.get('left').y < canopyTree.positions.get('left').y, 'primary leaves should orient from the upper trunk fork');
-assert.ok(canopyTree.positions.get('right-tip').y < canopyTree.positions.get('right').y);
-assert.ok(canopyTree.edges.every((edge) => edge.width > 0), 'branches should taper with a positive width');
+assertInsideCrown(canopyTree);
+assert.equal(canopyTree.parentById.get('right-tip'), 'right-deep', 'artistic placement must not fabricate browsing relationships');
+assert.equal(canopyTree.edges.filter(edge => edge.depth === 1).every(edge => edge.kind === 'primary'), true);
 
-const malformed = [node('root', 0), node('orphan', 4, 'missing-parent'), node('self', 2, 'self')];
+// A single deep research chain must remain a broad tree, not a vertical pole.
+for (const length of [7, 13, 96]) {
+  const chain = Array.from({ length }, (_, index) => node(`step-${index}`, index, index ? `step-${index - 1}` : null));
+  const tree = layoutTree(chain);
+  assertConnected(tree, chain);
+  assertInsideCrown(tree);
+  const leafX = chain.slice(1).map(item => tree.positions.get(item.id).x);
+  assert.ok(Math.max(...leafX) - Math.min(...leafX) > 100, 'long browsing chains should still occupy a leafy crown');
+  assert.equal(tree.mode, 'deep');
+}
+const wide = [node('root', 0), ...Array.from({ length: 95 }, (_, i) => node(`leaf-${i}`, 1, 'root'))];
+assertInsideCrown(layoutTree(wide));
+assertConnected(layoutTree(wide), wide);
+assert.equal(layoutTree(wide).labels.length, 1, 'page titles should not clutter the illustration before selection');
+
+const malformed = [node('root', 0), node('orphan', 4, 'missing'), node('self', 2, 'self')];
 const malformedTree = layoutTree(malformed);
 assertConnected(malformedTree, malformed);
-assert.equal(malformedTree.parentById.get('orphan'), 'root', 'missing parents should resolve to the root');
-assert.equal(malformedTree.parentById.get('self'), 'root', 'self-parenting nodes should resolve to the root');
-
-const labelled = [node('root', 0), node('a', 1), node('b', 1), node('c', 1), node('d', 1), node('e', 1), node('f', 1)];
-const labelledTree = layoutTree(labelled);
-assert.ok(labelledTree.labels.every((label) => label.x >= 18 && label.x <= 882), 'labels should remain inside the viewBox');
-assert.equal(new Set(labelledTree.labels.map((label) => label.nodeId)).size, labelledTree.labels.length, 'labels should be unique by node');
-const crowdedNodes = [node('root', 0), ...Array.from({ length: 14 }, (_, index) => node(`primary-${index}`, 1, 'root'))];
-const crowdedTree = layoutTree(crowdedNodes);
-assert.ok(crowdedTree.labels.length < crowdedNodes.length, 'crowded primary branches should not display every competing label');
-
-const first = JSON.stringify(layoutTree(canopy));
-const second = JSON.stringify(layoutTree(canopy));
-assert.equal(first, second, 'identical input should produce identical geometry');
-
-console.log('tree-layout tests passed');
+assert.equal(malformedTree.parentById.get('orphan'), 'root');
+assert.equal(malformedTree.parentById.get('self'), 'root');
+const cyclic = [node('root', 0), node('a', 1, 'c'), node('b', 2, 'a'), node('c', 3, 'b')];
+const original = structuredClone(cyclic);
+const cyclicTree = layoutTree(cyclic);
+assert.deepEqual(cyclic, original, 'repairs must not mutate historical data');
+assertConnected(cyclicTree, cyclic);
+for (const item of cyclic) {
+  let id = item.id;
+  const ancestors = new Set();
+  while (id) {
+    assert.ok(!ancestors.has(id), 'resolved ancestry must terminate');
+    ancestors.add(id);
+    id = cyclicTree.parentById.get(id);
+  }
+  assert.ok(ancestors.has('root'));
+}
+const duplicates = layoutTree([node('root', 0), node('a', 1, 'root'), node('a', 1, 'root')]);
+assert.equal(duplicates.positions.size, 2);
+assert.equal(duplicates.edges.length, 1);
+const staleDepths = Array.from({ length: 13 }, (_, i) => node(`node-${i}`, 0, i ? `node-${i - 1}` : null));
+assert.equal(layoutTree(staleDepths).maxDepth, 12, 'stale metadata must not change the true ancestry');
+assert.deepEqual(layoutTree(canopy), layoutTree(canopy), 'all geometry and Maps must be deterministic');
+assert.equal(treeStage('invalid').mode, 'sapling');
+console.log('storybook tree geometry and graph-preservation tests passed');

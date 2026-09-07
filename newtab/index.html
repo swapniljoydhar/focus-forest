@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Focus Forest — Plant Your Intention</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="../dashboard/tree.css">
 </head>
 <body>
   <!-- Ambient background with subtle nature elements -->
@@ -25,14 +26,7 @@
     <div id="onboarding-overlay" class="onboarding-overlay" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" hidden>
       <div class="onboarding-card">
         <div class="onboarding-visual" aria-hidden="true">
-          <svg viewBox="0 0 120 120" class="onboarding-tree">
-            <circle cx="60" cy="60" r="55" fill="rgba(113,155,108,0.12)"/>
-            <path d="M60 105 L60 60 C60 60 45 50 40 40 C35 30 45 25 50 32 C55 40 60 50 60 55" fill="none" stroke="#719b6c" stroke-width="4" stroke-linecap="round"/>
-            <circle cx="42" cy="38" r="8" fill="#719b6c" opacity="0.9"/>
-            <circle cx="62" cy="28" r="10" fill="#719b6c" opacity="0.85"/>
-            <circle cx="72" cy="45" r="7" fill="#719b6c" opacity="0.8"/>
-            <path d="M60 105 L60 95" stroke="#6c9566" stroke-width="5" stroke-linecap="round"/>
-          </svg>
+          <svg id="onboarding-tree" class="onboarding-tree" viewBox="195 0 510 520"></svg>
         </div>
         <h2 id="onboarding-title" class="onboarding-title">Welcome to Focus Forest</h2>
         <div class="onboarding-steps">
@@ -87,49 +81,11 @@
     
     <!-- Main hero section -->
     <section class="hero-section" aria-labelledby="main-heading">
-    <!-- Animated sapling illustration -->
+    <!-- Shared storybook tree; decorative, with no fabricated browsing leaves. -->
     <div class="sapling-container" aria-hidden="true">
-      <svg class="sapling-svg" viewBox="0 0 200 180">
-        <!-- Ground line -->
-        <ellipse class="ground-shadow" cx="100" cy="165" rx="65" ry="9"/>
-        <path class="ground-line" d="M45 168 Q100 162 155 168"/>
-        
-        <!-- Growing sapling (will animate) -->
-        <g class="sapling-growth">
-          <!-- Trunk with taper -->
-          <path class="sapling-trunk" d="M97 165 C95 145 94 130 96 110 C97 100 99 98 100 100 C101 98 103 100 104 110 C106 130 105 145 103 165 C102 167 98 167 97 165"/>
-          
-          <!-- Primary branches -->
-          <path class="sapling-branch branch-left" d="M96 130 C94 128 86 125 80 123 C76 121 77 119 81 121 C87 124 94 127 96 129"/>
-          <path class="sapling-branch branch-right" d="M104 126 C106 124 114 121 120 119 C124 117 123 115 119 117 C113 120 106 123 104 125"/>
-          
-          <!-- Secondary branches -->
-          <path class="sapling-branch branch-sub-left" d="M84 124 C82 122 76 120 72 118"/>
-          <path class="sapling-branch branch-sub-right" d="M116 120 C118 118 124 116 128 114"/>
-          
-          <!-- Leaves -->
-          <g class="leaf-cluster leaf-cluster-1">
-            <path class="leaf-shape" d="M80 123 C77 119 74 117 76 115 C78 113 82 118 80 123"/>
-            <path class="leaf-shape" d="M80 123 C83 119 86 117 84 115 C82 113 78 118 80 123"/>
-          </g>
-          <g class="leaf-cluster leaf-cluster-2">
-            <path class="leaf-shape" d="M120 119 C123 115 126 113 124 111 C122 109 118 114 120 119"/>
-            <path class="leaf-shape" d="M120 119 C117 115 114 113 116 111 C118 109 122 114 120 119"/>
-          </g>
-          <g class="leaf-cluster leaf-cluster-3">
-            <path class="leaf-shape" d="M72 118 C69 114 66 112 68 110 C70 108 74 113 72 118"/>
-          </g>
-          <g class="leaf-cluster leaf-cluster-4">
-            <path class="leaf-shape" d="M128 114 C131 110 134 108 132 106 C130 104 126 109 128 114"/>
-          </g>
-          <g class="leaf-cluster leaf-cluster-top">
-            <path class="leaf-shape leaf-large" d="M100 100 C96 95 92 92 95 89 C98 86 103 94 100 100"/>
-            <path class="leaf-shape leaf-large" d="M100 100 C104 95 108 92 105 89 C102 86 97 94 100 100"/>
-          </g>
-        </g>
-      </svg>
+      <svg id="welcome-tree" class="sapling-svg" viewBox="140 0 620 560"></svg>
     </div>
-      
+
       <div class="hero-content">
         <p class="intro-eyebrow">INTENTIONAL BROWSING</p>
         <h2 id="main-heading" class="main-heading">

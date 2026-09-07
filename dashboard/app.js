@@ -1,8 +1,7 @@
-import { layoutTree } from './tree-layout.js';
+import { renderGardenTree } from './tree-renderer.js';
 import { logError, wrapWithErrorBoundary, ERROR_CATEGORIES } from '../shared/error-tracing.js';
-import { getNodeDuration } from '../shared/state.js';
+import { getNodeDuration, STORAGE_KEY } from '../shared/state.js';
 
-const SVG_NS = 'http://www.w3.org/2000/svg';
 async function message(type, payload = {}) { return chrome.runtime.sendMessage({ type, ...payload }); }
 const svg = document.querySelector('#tree');
 const sessionSelect = document.querySelector('#session-select');
@@ -16,206 +15,31 @@ let selectedSessionId = null; let selectedNodeId = null; let careAction = null; 
 
 function branchClass(node) { return node.state === 'pruned' ? 'pruned' : node.state === 'composted' ? 'saved' : node.depth >= 5 ? 'deep' : node.depth >= 4 ? 'long' : node.depth === 0 ? 'root' : 'healthy'; }
 function nodeClasses(node) { return `${branchClass(node)}${node.closedAt ? ' closed' : ''}`; }
-function hashCode(str) { let hash = 0; for (let i = 0; i < str.length; i++) { const char = str.charCodeAt(i); hash = ((hash << 5) - hash) + char; hash = hash & hash; } return Math.abs(hash); }
 function confidenceLabel(node) { return node.relationshipConfidence === 'direct' ? 'direct link' : node.relationshipConfidence === 'tab-inferred' ? 'new tab from a tracked page' : 'unlinked path'; }
 function nodeDescription(node) { const state = node.state === 'pruned' ? 'pruned and kept in the trail' : node.state === 'composted' ? 'resting in compost' : node.depth === 0 ? 'mission root' : `${branchClass(node)} branch`; return `${(node.title || node.url || 'Untitled path').slice(0, 80)}, ${state}, ${confidenceLabel(node)}, depth ${node.depth}`; }
 function shortLabel(node) { const value = (node.title || node.url || 'Untitled path').replace(/^https?:\/\//, ''); return value.length > 20 ? `${value.slice(0, 19)}…` : value; }
-function svgElement(tag, attributes = {}, text = null) { const element = document.createElementNS(SVG_NS, tag); Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, String(value))); if (text != null) element.textContent = text; return element; }
-function svgPath(className, d, attributes = {}) { return svgElement('path', { class: className, d, ...attributes }); }
-function stateClass(node) { return nodeClasses(node); }
-function leafShape(scale = 1, rotate = 0) { return svgElement('path', { class: 'leaf-shape', d: 'M0 0 C6 -10 18 -13 24 -5 C20 4 10 6 0 0 Z', transform: `scale(${scale}) rotate(${rotate})` }); }
-function terminalLeaf(node, point, parentPoint) {
-  const group = svgElement('g', { class: `terminal-leaf ${stateClass(node)}`, transform: `translate(${point.x.toFixed(2)} ${point.y.toFixed(2)})` });
-  const dx = point.x - parentPoint.x; const dy = point.y - parentPoint.y;
-  const baseAngle = Math.atan2(dy, dx) * 180 / Math.PI;
-  // A small cluster of 3 leaves fanning outward from the branch tip.
-  const spread = 38;
-  group.append(leafShape(1, baseAngle - spread));
-  group.append(leafShape(1.15, baseAngle));
-  group.append(leafShape(1, baseAngle + spread));
-  return group;
-}
-function nodeMark(node, point, tree) {
-  const group = svgElement('g', { class: `node ${stateClass(node)}${node.id === selectedNodeId ? ' selected' : ''}`, tabindex: 0, role: 'button', 'data-node-id': node.id, 'aria-label': nodeDescription(node) });
-  group.append(svgElement('title', {}, nodeDescription(node)));
-  const children = tree.children.get(node.id) || [];
-  if (node.depth === 0) {
-    // Mission root: a planted seed/sprout at the base of the trunk.
-    group.append(svgElement('ellipse', { cx: point.x, cy: point.y + 6, rx: 16, ry: 9, class: 'root-base' }));
-    group.append(svgElement('path', { class: 'root-sprout', d: `M${point.x} ${point.y + 6} C${point.x - 3} ${point.y - 4} ${point.x + 3} ${point.y - 8} ${point.x} ${point.y - 14}` }));
-    group.append(leafShape(0.7, -42));
-    group.lastChild.setAttribute('transform', `translate(${point.x - 4} ${point.y - 12}) scale(0.7) rotate(-42)`);
-    const leaf2 = leafShape(0.7, 42);
-    leaf2.setAttribute('transform', `translate(${point.x + 4} ${point.y - 12}) scale(0.7) rotate(42)`);
-    group.append(leaf2);
-  } else if (children.length) {
-    // Junction: a subtle bark knot where a branch forks.
-    group.append(svgElement('circle', { cx: point.x, cy: point.y, r: 6, class: 'junction-mark' }));
-  } else {
-    const parentPoint = tree.positions.get(tree.parentById.get(node.id)) || { x: point.x, y: point.y + 30 };
-    group.append(terminalLeaf(node, point, parentPoint));
-  }
-  return group;
-}
-function appendDefs(svgRoot) {
-  const defs = svgElement('defs');
-  const trunkGrad = svgElement('linearGradient', { id: 'bark-grad', x1: '0%', y1: '0%', x2: '100%', y2: '0%' });
-  trunkGrad.append(svgElement('stop', { offset: '0%', 'stop-color': '#6e4e3d' }), svgElement('stop', { offset: '35%', 'stop-color': '#8c6b55' }), svgElement('stop', { offset: '65%', 'stop-color': '#7a5a45' }), svgElement('stop', { offset: '100%', 'stop-color': '#5c3e2e' }));
-  defs.append(trunkGrad);
-  const branchGrad = svgElement('linearGradient', { id: 'branch-grad', x1: '0%', y1: '0%', x2: '100%', y2: '0%' });
-  branchGrad.append(svgElement('stop', { offset: '0%', 'stop-color': '#8c6b55' }), svgElement('stop', { offset: '50%', 'stop-color': '#a6846b' }), svgElement('stop', { offset: '100%', 'stop-color': '#7a5a45' }));
-  defs.append(branchGrad);
-  svgRoot.append(defs);
-}
-function saplingBolePath(tree, groundY, rootPoint) { const x = tree.trunk.x; const r = tree.trunk.rootY; const f = tree.trunk.forkY; return `M${(x - 14).toFixed(2)} ${groundY.toFixed(2)} C${(x - 23).toFixed(2)} ${(groundY - 8).toFixed(2)}, ${(x - 18).toFixed(2)} ${(r + 28).toFixed(2)}, ${(x - 10).toFixed(2)} ${(r + 9).toFixed(2)} C${(x - 8).toFixed(2)} ${(r - 10).toFixed(2)}, ${(x - 12).toFixed(2)} ${(f + 30).toFixed(2)}, ${(x - 8).toFixed(2)} ${(f + 9).toFixed(2)} L${(x + 7).toFixed(2)} ${(f + 9).toFixed(2)} C${(x + 11).toFixed(2)} ${(f + 30).toFixed(2)}, ${(x + 8).toFixed(2)} ${(r - 8).toFixed(2)}, ${(x + 11).toFixed(2)} ${(r + 10).toFixed(2)} C${(x + 18).toFixed(2)} ${(r + 30).toFixed(2)}, ${(x + 24).toFixed(2)} ${(groundY - 9).toFixed(2)}, ${(x + 13).toFixed(2)} ${groundY.toFixed(2)} Z`; }
-function leafBud(bud) { return svgElement('path', { class: 'tree-leaf-bud', d: 'M0 0 C3 -14 14 -19 20 -12 C19 -3 10 3 0 0 Z', transform: `translate(${bud.x.toFixed(2)} ${bud.y.toFixed(2)}) rotate(${bud.angle}) scale(${bud.scale})` }); }
-function appendBotanicalStructure(structure, tree, groundY, rootPoint) {
-  structure.append(svgPath('tree-ground', `M${tree.width * .28} ${(groundY + 2).toFixed(2)} Q${tree.width / 2} ${(groundY - 24).toFixed(2)} ${tree.width * .72} ${(groundY + 2).toFixed(2)}`));
-  if (tree.trunk.rootFlare?.length) tree.trunk.rootFlare.forEach((flare) => structure.append(svgPath(`tree-root-flare ${flare.side}`, flare.d)));
-  const bolePath = tree.mode === 'seed' || tree.mode === 'sapling'
-    ? saplingBolePath(tree, groundY, rootPoint)
-    : `M${tree.width / 2} ${groundY} C${tree.width / 2 - 6} ${groundY - 20} ${tree.width / 2 + 5} ${rootPoint.y + 28} ${rootPoint.x} ${rootPoint.y + 12} C${rootPoint.x - 6} ${rootPoint.y - 14} ${tree.width / 2 + 4} ${tree.trunk.forkY + 24} ${tree.trunk.x} ${tree.trunk.forkY}`;
-  structure.append(svgPath('tree-bole bark-texture', bolePath));
-  if (tree.trunk.shoots?.length) tree.trunk.shoots.forEach((shoot) => structure.append(svgPath(`tree-shoot ${shoot.side}`, shoot.d)));
-  if (tree.trunk.buds?.length) tree.trunk.buds.forEach((bud) => structure.append(leafBud(bud)));
-  if (tree.trunk.shootY != null && !tree.trunk.buds?.length) structure.append(svgPath('tree-shoot', `M${tree.trunk.x} ${tree.trunk.forkY} C${tree.trunk.x - 2} ${tree.trunk.forkY - 10} ${tree.trunk.x + 2} ${tree.trunk.shootY + 12} ${tree.trunk.x} ${tree.trunk.shootY}`));
-}
-function appendLabel(svgRoot, node, label) { const text = svgElement('text', { x: label.x, y: label.y, 'text-anchor': label.anchor, class: 'node-label' }, shortLabel(node)); text.dataset.nodeId = node.id; svgRoot.append(text); }
-function appendEmptyGarden() {
-  svg.dataset.treeMode = 'empty';
-  svg.setAttribute('viewBox', '0 0 900 320');
-  const title = svgElement('title', {}, 'An empty Focus Forest garden');
-  const description = svgElement('desc', {}, 'A young rooted sapling waiting for a mission.');
-  const group = svgElement('g', { class: 'empty-garden' });
-  group.append(
-    svgPath('empty-ground', 'M360 273 Q450 244 540 273'),
-    svgPath('empty-trunk', 'M450 270 C448 247 449 218 450 178'),
-    svgPath('empty-sprig', 'M450 202 C428 181 411 171 394 170'),
-    svgPath('empty-sprig', 'M450 190 C471 169 490 162 510 163'),
-    svgPath('empty-leaf', 'M392 171 C397 151 414 142 431 147 C425 164 411 174 392 171 Z'),
-    svgPath('empty-leaf', 'M489 164 C501 145 519 141 533 150 C521 166 506 169 489 164 Z'),
-    svgElement('circle', { cx: 450, cy: 273, r: 14, class: 'empty-root' }),
-    svgElement('text', { x: 450, y: 304, 'text-anchor': 'middle', class: 'empty-tree' }, 'Plant a mission to grow your first garden.')
-  );
-  svg.replaceChildren(title, description, group);
-}
-// Build a tapered branch: a closed filled path that is wide at the parent
-// end and narrows toward the child, giving an organic bark-like limb.
-function taperedBranchPath(parent, child, wParent, wChild, nodeId) {
-  if (!parent || !child) return '';
-  const dx = child.x - parent.x; const dy = child.y - parent.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = -dy / len; const ny = dx / len; // normal
-  const px = (p) => parent.x + nx * p;
-  const py = (p) => parent.y + ny * p;
-  const cx = (p) => child.x + nx * p;
-  const cy = (p) => child.y + ny * p;
-  // Curve the branch slightly using control points offset along the branch.
-  const hash = hashCode(nodeId || '');
-  const bendSign = hash % 2 ? 1 : -1;
-  const bendMag = Math.min(16, len * 0.14) * bendSign;
-  const twist = (hash % 3 - 1) * 4; // secondary S-curve variation
-  const c1x = parent.x + dx * 0.38 + nx * bendMag + (hash % 5 - 2) * 1.5; const c1y = parent.y + dy * 0.38 + ny * bendMag + twist;
-  const c2x = child.x - dx * 0.32 + nx * bendMag - twist; const c2y = child.y - dy * 0.32 + ny * bendMag + (hash % 7 - 3) * 1.2;
-  return `M${px(wParent).toFixed(2)} ${py(wParent).toFixed(2)} C${(c1x + nx * wParent).toFixed(2)} ${(c1y + ny * wParent).toFixed(2)}, ${(c2x + nx * wChild).toFixed(2)} ${(c2y + ny * wChild).toFixed(2)}, ${cx(wChild).toFixed(2)} ${cy(wChild).toFixed(2)} L${cx(-wChild).toFixed(2)} ${cy(-wChild).toFixed(2)} C${(c2x - nx * wChild).toFixed(2)} ${(c2y - ny * wChild).toFixed(2)}, ${(c1x - nx * wParent).toFixed(2)} ${(c1y - ny * wParent).toFixed(2)}, ${px(-wParent).toFixed(2)} ${py(-wParent).toFixed(2)} Z`;
-}
-function leafClusterAlongBranch(parent, child, node) {
-  const leaves = [];
-  const dx = child.x - parent.x; const dy = child.y - parent.y;
-  const len = Math.hypot(dx, dy) || 1;
-  const hash = hashCode(node?.id || '');
-  const count = 2 + (hash % 3); // 2-4 leaves per cluster
-  for (let i = 0; i < count; i++) {
-    const t = (i + 1) / (count + 1); // evenly spaced along branch
-    const x = parent.x + dx * t + (hash % 5 - 2) * 2;
-    const y = parent.y + dy * t + (hash % 7 - 3) * 2;
-    const scale = 0.6 + (hash % 4) * 0.15;
-    const angle = Math.atan2(dy, dx) * 180 / Math.PI + (hash % 11 - 5) * 12;
-    const group = svgElement('g', { class: `branch-leaf ${node ? stateClass(node) : ''}`, transform: `translate(${x.toFixed(2)} ${y.toFixed(2)})` });
-    const spread = 25 + (hash % 10);
-    group.append(leafShape(scale, angle - spread), leafShape(scale * 1.1, angle), leafShape(scale, angle + spread));
-    leaves.push(group);
-  }
-  return leaves;
-}
 function renderTree(session) {
-  svg.replaceChildren();
-  if (!session || !session.nodes.length) { appendEmptyGarden(); detail.hidden = true; return; }
-  appendDefs(svg);
-  const nodes = session.nodes.slice();
-  const tree = layoutTree(nodes);
-  svg.dataset.treeMode = tree.mode;
-  svg.setAttribute('viewBox', `0 0 ${tree.width} ${tree.height}`);
-  const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-  svg.append(
-    svgElement('title', {}, `Living ${tree.mode} tree of ${session.mission}`),
-    svgElement('desc', {}, 'A rooted tree showing browsing paths growing upward from the mission root.')
-  );
-  const structure = svgElement('g', { class: 'tree-structure', 'aria-hidden': 'true' });
-  const groundY = tree.baseY + 20;
-  const rootPoint = tree.positions.get(tree.root.id);
-  appendBotanicalStructure(structure, tree, groundY, rootPoint);
-  svg.append(structure);
-  const branchLayer = svgElement('g', { class: 'branch-layer', 'aria-hidden': 'true' });
-  tree.edges.forEach((edge) => {
-    const node = nodeMap.get(edge.nodeId);
-    const parentPoint = tree.positions.get(edge.parentId);
-    const childPoint = tree.positions.get(edge.nodeId);
-    const w = edge.width;
-    branchLayer.append(svgPath(`branch-taper ${edge.kind} ${stateClass(node)}`, taperedBranchPath(parentPoint, childPoint, w, w * 0.45, edge.nodeId)));
+  const tree = renderGardenTree(svg, session, {
+    selectedNodeId, describeNode: nodeDescription, classForNode: nodeClasses, shortLabel
   });
-  svg.append(branchLayer);
-  const leafLayer = svgElement('g', { class: 'leaf-layer', 'aria-hidden': 'true' });
-  tree.edges.forEach((edge) => {
-    const node = nodeMap.get(edge.nodeId);
-    const parentPoint = tree.positions.get(edge.parentId);
-    const childPoint = tree.positions.get(edge.nodeId);
-    const leafCluster = leafClusterAlongBranch(parentPoint, childPoint, node);
-    leafCluster.forEach((leaf) => leafLayer.append(leaf));
+  const stages = { empty: 'Every forest starts somewhere.', seed: 'A little beginning.', sapling: 'Putting down roots.', canopy: 'Room for your curiosity.', deep: 'A whole world of little discoveries.' };
+  document.querySelector('#tree-stage').textContent = stages[tree.mode];
+  document.querySelector('#tree-hint').textContent = !tree.root
+    ? 'Plant an intention, and give your curiosity a place to grow.'
+    : tree.nodes.length === 1
+      ? 'Your intention is planted. Follow a link to grow your first leaf.'
+      : 'Each marked leaf is a page. Pick one to trace its path home.';
+  const picker = document.querySelector('#tree-page-select');
+  picker.replaceChildren(makeTextElement('option', 'Choose a leaf…'));
+  picker.firstChild.value = '';
+  tree.nodes.forEach(node => {
+    const option = makeTextElement('option', `${node.id === tree.root.id ? 'Root · ' : ''}${node.title || node.url || 'Untitled page'}`);
+    option.value = node.id;
+    picker.append(option);
   });
-  svg.append(leafLayer);
-  // Highlight the path from root to the selected node.
-  if (selectedNodeId) {
-    const ancestry = [];
-    let cur = nodeMap.get(selectedNodeId);
-    while (cur) {
-      ancestry.push(cur.id);
-      const next = cur.parentId && nodeMap.get(cur.parentId) ? nodeMap.get(cur.parentId) : null;
-      cur = next;
-    }
-    const highlightLayer = svgElement('g', { class: 'highlight-layer', 'aria-hidden': 'true' });
-    ancestry.reverse().forEach((nodeId, i) => {
-      if (i === 0) return;
-      const node = nodeMap.get(nodeId);
-      const edge = tree.edges.find((e) => e.nodeId === nodeId);
-      if (!edge || !node) return;
-      const parentPoint = tree.positions.get(edge.parentId);
-      const childPoint = tree.positions.get(edge.nodeId);
-      const w = edge.width;
-      highlightLayer.append(svgPath(`branch-taper ${edge.kind} ${stateClass(node)} highlight`, taperedBranchPath(parentPoint, childPoint, w + 1.5, w * 0.45 + 1, edge.nodeId)));
-    });
-    svg.append(highlightLayer);
-  }
-  const markLayer = svgElement('g', { class: 'mark-layer' });
-  nodes.forEach((node) => markLayer.append(nodeMark(node, tree.positions.get(node.id), tree)));
-  const labelMap = new Map(tree.labels.map((label) => [label.nodeId, label]));
-  nodes.forEach((node) => {
-    if (node.id === selectedNodeId && !labelMap.has(node.id)) {
-      const pos = tree.positions.get(node.id);
-      labelMap.set(node.id, {
-        nodeId: node.id,
-        x: pos.x,
-        y: pos.y - 14,
-        anchor: pos.x >= tree.width / 2 ? 'end' : 'start'
-      });
-    }
-  });
-  nodes.forEach((node) => {
-    const label = labelMap.get(node.id);
-    if (label) appendLabel(markLayer, node, label);
-  });
-  svg.append(markLayer);
-  renderDetail(nodeMap.get(selectedNodeId), session);
+  picker.value = selectedNodeId || '';
+  picker.parentElement.hidden = !tree.root;
+  renderDetail(tree.nodes.find(node => node.id === selectedNodeId), session);
 }
 function makeTextElement(tag, text, className = '') {
   const element = document.createElement(tag);
@@ -412,6 +236,7 @@ careDialog.addEventListener('click', wrapWithErrorBoundary(event => { if (event.
 document.addEventListener('keydown', wrapWithErrorBoundary(event => { if (careDialog.hidden) return; if (event.key === 'Escape') { event.preventDefault(); closeCareDialog(); } if (event.key === 'Tab') { const focusables = [careCancel, careConfirm]; const index = focusables.indexOf(document.activeElement); if (event.shiftKey && index <= 0) { event.preventDefault(); focusables[focusables.length - 1].focus(); } else if (!event.shiftKey && (index === focusables.length - 1 || index < 0)) { event.preventDefault(); focusables[0].focus(); } } }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'document.keydown', swallow: true }));
 const safeSelectNode = wrapWithErrorBoundary(selectNode, { category: ERROR_CATEGORIES.UI_RENDER, function: 'selectNode', swallow: true });
 async function selectNode(nodeId, returnFocus = false) { selectedNodeId = nodeId; await renderSafely(); if (returnFocus && !detail.hidden) detail.focus({ preventScroll: true }); }
+document.querySelector('#tree-page-select').addEventListener('change', wrapWithErrorBoundary(event => safeSelectNode(event.target.value || null, true), { category: ERROR_CATEGORIES.UI_RENDER, function: 'treePageSelect.change', swallow: true }));
 sessionSelect.addEventListener('change', wrapWithErrorBoundary(() => { selectedSessionId = sessionSelect.value; selectedNodeId = null; renderSafely(); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'sessionSelect.change', swallow: true }));
 svg.addEventListener('click', wrapWithErrorBoundary(event => { const node = event.target.closest?.('[data-node-id]'); if (node) safeSelectNode(node.dataset.nodeId); }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'svg.click', swallow: true }));
 svg.addEventListener('keydown', wrapWithErrorBoundary(event => { const node = event.target.closest?.('[data-node-id]'); if (node && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); safeSelectNode(node.dataset.nodeId, true); } }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'svg.keydown', swallow: true }));
@@ -428,14 +253,20 @@ document.querySelector('#settings').addEventListener('click', wrapWithErrorBound
 const tabButtons = document.querySelectorAll('.tab-btn');
 const mapTab = document.querySelector('#map-tab');
 const statsTab = document.querySelector('#stats-tab');
-let activeTab = 'map';
+let activeTab = null;
 function switchTab(tab) {
-  if (activeTab === tab) return;
+  if (tab !== 'map' && tab !== 'stats') return;
+  const changed = activeTab !== tab;
   activeTab = tab;
-  tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+  // Always reconcile visibility, even when the already-active button is clicked.
+  tabButtons.forEach(btn => {
+    const selected = btn.dataset.tab === tab;
+    btn.classList.toggle('active', selected);
+    btn.setAttribute('aria-pressed', String(selected));
+  });
   if (mapTab) { mapTab.classList.toggle('active', tab === 'map'); mapTab.hidden = tab !== 'map'; }
   if (statsTab) { statsTab.classList.toggle('active', tab === 'stats'); statsTab.hidden = tab !== 'stats'; }
-  if (tab === 'stats') loadStatsTab();
+  if (tab === 'stats' && changed) loadStatsTab();
 }
 const safeSwitchTab = wrapWithErrorBoundary(switchTab, { category: ERROR_CATEGORIES.UI_RENDER, function: 'switchTab', swallow: true });
 tabButtons.forEach(btn => btn.addEventListener('click', () => safeSwitchTab(btn.dataset.tab)));
@@ -720,4 +551,22 @@ if (importBtn && importInput) {
   importInput.addEventListener('change', wrapWithErrorBoundary(() => importData(), { category: ERROR_CATEGORIES.MESSAGING, function: 'importData.change', swallow: true }));
 }
 
+// Browsing continues in other tabs while the garden is open. Coalesce storage
+// notifications instead of polling, and catch up when this page becomes visible.
+let gardenRefreshTimer = 0;
+function scheduleGardenRefresh() {
+  window.clearTimeout(gardenRefreshTimer);
+  if (document.hidden) return;
+  gardenRefreshTimer = window.setTimeout(() => {
+    renderSafely();
+    if (activeTab === 'stats') loadStatsTab();
+  }, 80);
+}
+chrome.storage?.onChanged?.addListener((changes, area) => {
+  if (area === 'local' && changes[STORAGE_KEY]) scheduleGardenRefresh();
+});
+window.addEventListener('focus', scheduleGardenRefresh);
+document.addEventListener('visibilitychange', scheduleGardenRefresh);
+
+switchTab('map');
 renderSafely();

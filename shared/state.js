@@ -122,15 +122,20 @@ export function activeSession(state) {
 const SAFE_STATES = new Set(['normal', 'desaturated', 'interrupted', 'paused', 'pruned', 'composted']);
 const SAFE_CONFIDENCE = new Set(['direct', 'tab-inferred', 'external']);
 const SAFE_REASONS = new Set(['user_ended', 'mission_changed', 'browse_without_mission']);
+/** Accept only the new-tab placeholder, never other privileged browser pages. */
+export function isBrowserNewTabUrl(value) {
+  return typeof value === 'string' && /^(?:chrome|brave):\/\/newtab\/?$/i.test(value);
+}
+
 /**
  * Validates a URL for safe session storage.
- * Accepts HTTP(S) URLs, chrome://newtab, and the current extension origin.
+ * Accepts HTTP(S), Chrome/Brave new-tab placeholders, and the current extension origin.
  * @param {string} value - Raw URL string.
  * @returns {string|null} Safe URL or null if invalid.
  */
 export function safeSessionUrl(value) {
   const raw = String(value || ''); const http = safeHttpUrl(raw); if (http) return http;
-  if (/^chrome:\/\/newtab(?:\/|$)/i.test(raw)) return raw.length <= LIMITS.URL ? raw : null;
+  if (isBrowserNewTabUrl(raw)) return raw;
   const extensionMatch = /^chrome-extension:\/\/([a-z0-9-]+)\/(.*)$/i.exec(raw);
   const extensionId = typeof chrome !== 'undefined' ? chrome.runtime?.id : null;
   if (extensionMatch && extensionId && extensionMatch[1].toLowerCase() === String(extensionId).toLowerCase()) return raw.length <= LIMITS.URL ? raw : null;

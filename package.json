@@ -4,10 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test-service-worker.mjs && node test-state.mjs && node test-error-tracing.mjs && node test-repository-integrity.mjs",
+    "test": "node test-service-worker.mjs && node test-state.mjs && node test-error-tracing.mjs && node test-tree-layout.mjs && node test-security.mjs && node test-repository-integrity.mjs",
     "test:sw": "node test-service-worker.mjs",
     "test:state": "node test-state.mjs",
     "test:errors": "node test-error-tracing.mjs",
-    "test:integrity": "node test-repository-integrity.mjs"
+    "test:integrity": "node test-repository-integrity.mjs",
+    "test:tree": "node test-tree-layout.mjs",
+    "test:dashboard": "node test-dashboard-browser.mjs",
+    "preview:trees": "node scripts/preview-trees.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }

@@ -35,6 +35,7 @@ globalThis.chrome = {
 const {
   STORAGE_KEY,
   isSearchUrl,
+  isBrowserNewTabUrl,
   safeHttpUrl,
   safeSessionUrl,
   canonicalUrl,
@@ -89,6 +90,8 @@ describe('shared/state.js core functions', () => {
 
   it('isSearchUrl detects known search engines and query params', () => {
     assert.ok(isSearchUrl('https://www.google.com/search?q=cats'));
+    assert.ok(isSearchUrl('https://search.brave.com/search?q=trees'));
+    assert.ok(isSearchUrl('https://search.brave.com/'));
     assert.ok(isSearchUrl('https://duckduckgo.com/?q=test'));
     assert.ok(isSearchUrl('https://bing.com/search?q=hello'));
     assert.ok(isSearchUrl('https://yahoo.com/search?p=term'));
@@ -119,6 +122,19 @@ describe('shared/state.js core functions', () => {
     assert.strictEqual(canonicalUrl('https://example.com/path?utm_source=x#fragment'), 'https://example.com/path');
     assert.strictEqual(canonicalUrl(`https://example.com/${'x'.repeat(LIMITS.URL)}`), null);
     assert.strictEqual(safeHttpUrl(`https://example.com/${'x'.repeat(LIMITS.URL)}`), null);
+  });
+
+  it('recognizes Brave new tabs without accepting arbitrary privileged URLs', () => {
+    for (const url of ['brave://newtab', 'brave://newtab/', 'chrome://newtab', 'chrome://newtab/']) {
+      assert.strictEqual(isBrowserNewTabUrl(url), true);
+      assert.strictEqual(safeSessionUrl(url), url);
+      assert.strictEqual(safeHttpUrl(url), null, 'internal tabs must never become ordinary browsing pages');
+    }
+    for (const url of ['brave://settings', 'brave://history', 'brave://newtab.evil/', 'brave://newtab/settings',
+      'brave://user@newtab/', 'brave://newtab:80/', 'chrome://newtab/other', 'brave-extension://test/newtab/index.html']) {
+      assert.strictEqual(isBrowserNewTabUrl(url), false);
+      assert.strictEqual(safeSessionUrl(url), null);
+    }
   });
 
   it('safeSessionUrl accepts only the current extension origin or new-tab placeholder', () => {
