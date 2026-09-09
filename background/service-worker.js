@@ -426,6 +426,8 @@ async function getDashboardStats() {
   let totalFocusTime = 0;
   const domainCounts = {};
   const dailyMinutes = {};
+  // Performance optimization: track unique active ISO date keys in a Set for O(1) streak lookups
+  const activeDays = new Set();
   
   // Initialize last 7 days using ISO date keys (not weekday names)
   for (let i = 6; i >= 0; i--) {
@@ -456,36 +458,22 @@ async function getDashboardStats() {
     
     // Daily breakdown using ISO date key
     const dayKey = new Date(sessionStart).toISOString().slice(0, 10);
+    activeDays.add(dayKey);
     if (Object.hasOwn(dailyMinutes, dayKey)) {
       dailyMinutes[dayKey] += Math.floor(sessionDuration / 60);
     }
   }
 
   // Calculate streak: consecutive days with activity, counting backward from today
+  // Bolt optimization: O(1) Set lookup per day instead of O(N) array scanning per day
   let currentStreak = 0;
   for (let i = 0; i < 365; i++) {
     const checkDate = new Date(now - (i * oneDayMs));
     const dayKey = checkDate.toISOString().slice(0, 10);
-    // For days within our 7-day window, check the dailyMinutes map
-    // For older days, scan sessions directly
-    if (i < 7) {
-      if (dailyMinutes[dayKey] > 0) {
-        currentStreak++;
-      } else if (i > 0) {
-        break;
-      }
-    } else {
-      const dayStart = new Date(dayKey).getTime();
-      const dayEnd = dayStart + oneDayMs;
-      const hadActivity = state.sessions.some((s) => {
-        const start = s.startedAt || 0;
-        return start >= dayStart && start < dayEnd;
-      });
-      if (hadActivity) {
-        currentStreak++;
-      } else {
-        break;
-      }
+    if (activeDays.has(dayKey)) {
+      currentStreak++;
+    } else if (i > 0) {
+      break;
     }
   }
 
