@@ -92,27 +92,29 @@
 .chip.minimized .chip-mission{display:block;font-size:11px;max-width:90px}
 @keyframes ff-tree-grow{0%{opacity:0;transform:scale(.3)}
 60%{opacity:1;transform:scale(1.05)}
-100%{opacity:1;transform:scale(1)}
+100%{opacity:1;transform:scale(1)}}
 @keyframes ff-tree-flicker{0%,100%{opacity:1;filter:brightness(1)}
-50%{opacity:.5;filter:brightness(1.4)}
-@keyframes ff-slide-in{from{opacity:0;transform:translateY(-8px) scale(.96)}
-.choice-card{position:fixed;bottom:18px;right:18px;max-width:min(420px,calc(100vw - 32px));padding:18px 18px 16px;border:1px solid rgba(74,104,71,.18);border-radius:18px;background:linear-gradient(120deg,rgba(252,251,245,.98),rgba(243,248,239,.97));box-shadow:0 16px 48px rgba(42,65,41,.2);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);pointer-events:auto;animation:ff-slide-up .3s cubic-bezier(.2,.8,.3,1) both}
-.choice-card[hidden]{display:none}
-.choice-card .close{position:absolute;top:10px;right:10px;border:0;background:rgba(74,104,71,.08);border-radius:999px;width:26px;height:26px;font-size:15px;line-height:1;color:#5a7355;cursor:pointer}
-.choice-card .close:hover{background:rgba(74,104,71,.16)}
-.choice-eyebrow{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:#6c8c68;margin:0 0 8px}
-.choice-card h2{font:600 15px/1.3 ui-sans-serif,system-ui,sans-serif;color:#29432d;margin:0 0 10px}
-.choice-copy{font:13px/1.55 ui-sans-serif,system-ui,sans-serif;color:#3d5239;margin:0 0 14px}
-.choice-actions{display:flex;flex-direction:column;gap:7px}
-.choice{appearance:none;border:1px solid rgba(74,104,71,.16);border-radius:12px;background:rgba(255,255,255,.7);color:#29432d;font:inherit;text-align:left;padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .15s,border-color .15s,transform .1s}
-.choice:hover{background:rgba(243,248,239,.9);border-color:rgba(74,104,71,.3);transform:translateX(2px)}
-.choice:active{transform:scale(.99)}
-.choice.primary{background:linear-gradient(120deg,rgba(108,150,103,.16),rgba(108,150,103,.1));border-color:rgba(108,150,103,.3)}
-.choice-icon{font-size:15px;width:20px;text-align:center;flex:none}
+50%{opacity:.5;filter:brightness(1.4)}}
+@keyframes ff-slide-in{from{opacity:0;transform:translateY(-8px) scale(.96)} to{opacity:1;transform:translateY(0) scale(1)}}
+.choice-card{position:fixed;bottom:24px;right:24px;z-index:2147483647;max-width:min(420px,calc(100vw - 32px));padding:20px 20px 18px;border:1px solid rgba(74,104,71,.2);border-radius:24px;background:rgba(252,251,245,.98);box-shadow:0 12px 36px rgba(42,65,41,.24);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);pointer-events:auto;animation:ff-slide-up .3s cubic-bezier(.2,.8,.3,1) both}
+.choice-card[hidden]{display:none !important}
+.choice-card .close{position:absolute;top:12px;right:12px;border:0;background:rgba(74,104,71,.1);border-radius:999px;width:28px;height:28px;font-size:16px;line-height:1;color:#3d5239;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.choice-card .close:hover{background:rgba(74,104,71,.2)}
+.choice-eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#4a7c59;margin:0 0 6px}
+.choice-card h2{font:600 17px/1.3 ui-sans-serif,system-ui,sans-serif;color:#29432d;margin:0 0 8px}
+.choice-copy{font:14px/1.5 ui-sans-serif,system-ui,sans-serif;color:#3d5239;margin:0 0 16px}
+.choice-actions{display:flex;flex-direction:column;gap:8px}
+.choice{appearance:none;border:1px solid rgba(74,104,71,.2);border-radius:14px;background:rgba(255,255,255,.85);color:#29432d;font:inherit;text-align:left;padding:12px 14px;cursor:pointer;display:flex;align-items:center;gap:12px;transition:background .15s,border-color .15s,transform .1s}
+.choice:hover{background:#ffffff;border-color:rgba(74,104,71,.4);transform:translateX(2px)}
+.choice:active{transform:scale(.98)}
+.choice.primary{background:linear-gradient(135deg,#4a7c59 0%,#3a5f46 100%);color:#ffffff;border:none}
+.choice.primary small{color:rgba(255,255,255,.85)}
+.choice.primary:hover{background:linear-gradient(135deg,#538b64 0%,#416b4f 100%)}
+.choice-icon{font-size:16px;width:22px;text-align:center;flex:none}
 .choice span{display:block}
 .choice strong{font-weight:600;font-size:13px}
-.choice small{font-size:11px;color:#6c8c68;margin-top:1px}
-@keyframes ff-slide-up{from{opacity:0;transform:translateY(12px)}`;
+.choice small{font-size:11px;color:#6c8c68;margin-top:2px}
+@keyframes ff-slide-up{from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)}}
   shadow.append(style);
 
   const makeElement = (tag, className = '', attributes = {}, text = null) => {
