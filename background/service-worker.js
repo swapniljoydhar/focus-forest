@@ -556,12 +556,21 @@ async function importAllData(payload) {
   const incoming = payload.data;
   const incomingState = isRecord(incoming.state) ? incoming.state : incoming;
   const next = await normalizeState(incomingState);
+  const current = await loadState();
+  const mergedSessions = [...current.sessions, ...next.sessions].slice(-LIMITS.SESSIONS);
+  const activeSessionId = mergedSessions.some((s) => s.id === next.activeSessionId)
+    ? next.activeSessionId
+    : (mergedSessions.some((s) => s.id === current.activeSessionId) ? current.activeSessionId : null);
+  const compostMap = new Map();
+  for (const item of [...next.compostItems, ...current.compostItems]) {
+    if (item?.id && !compostMap.has(item.id)) compostMap.set(item.id, item);
+  }
   const merged = {
     schemaVersion: SCHEMA_VERSION,
-    sessions: [...(await loadState()).sessions, ...next.sessions].slice(-LIMITS.SESSIONS),
-    compostItems: [...(await loadState()).compostItems, ...next.compostItems].slice(0, LIMITS.COMPOST),
+    sessions: mergedSessions,
+    compostItems: Array.from(compostMap.values()).slice(0, LIMITS.COMPOST),
     settings: next.settings,
-    activeSessionId: next.activeSessionId || (await loadState()).activeSessionId
+    activeSessionId
   };
   await replaceState(merged);
   return { imported: true };

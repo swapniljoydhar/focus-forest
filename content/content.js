@@ -348,6 +348,7 @@
   function hideChoiceCard() { choiceCard.hidden = true; }
 
   shadow.addEventListener('click', wrapWithErrorBoundary(async (event) => {
+    if (!event.isTrusted) return;
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (action === 'home') { hideChoiceCard(); await send('GO_HOME'); }
     else if (action === 'compost') { await send('COMPOST', { url: location.href, title: document.title }); hideChoiceCard(); }
