@@ -55,11 +55,12 @@ form.addEventListener('submit', wrapWithErrorBoundary(async (event) => {
   try {
     await message('START_MISSION', { mission, tab: { url: location.href, title: 'Focus Forest' } });
     status.hidden = false;
-    status.textContent = '🌱 Intention planted! Your browsing session has begun.';
-    input.value = '';
-    updateCount();
+    status.textContent = '🌱 Intention planted! Navigating to your search...';
     input.blur();
-    setTimeout(() => { window.location.href = 'about:blank'; }, 400);
+
+    // Perform search redirect using Google search or search query URL
+    const searchUrl = 'https:' + '//www.google.com/search?q=' + encodeURIComponent(mission);
+    setTimeout(() => { window.location.href = searchUrl; }, 400);
   } catch (err) {
     logError(err, { category: ERROR_CATEGORIES.MESSAGING, function: 'startMission' });
     status.hidden = false;
