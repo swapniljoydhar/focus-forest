@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { layoutTree, treeStage } from './dashboard/tree-layout.js';
+import { branchWidth, labelPlacement, layoutTree, treeStage } from './dashboard/tree-layout.js';
 
 function node(id, depth, parentId = null, extra = {}) {
   return { id, depth, parentId, title: id, state: 'normal', ...extra };
@@ -103,4 +103,12 @@ const staleDepths = Array.from({ length: 13 }, (_, i) => node(`node-${i}`, 0, i 
 assert.equal(layoutTree(staleDepths).maxDepth, 12, 'stale metadata must not change the true ancestry');
 assert.deepEqual(layoutTree(canopy), layoutTree(canopy), 'all geometry and Maps must be deterministic');
 assert.equal(treeStage('invalid').mode, 'sapling');
+assert.equal(branchWidth(0), 5, 'roots and shallow branches stay thick');
+assert.equal(branchWidth(1), 5);
+assert.equal(branchWidth(5), 3.6);
+assert.equal(branchWidth(99), 2, 'deep branches never vanish below the minimum width');
+const rootLabel = labelPlacement({ x: 450, y: 400 }, 'root', true);
+assert.deepEqual(rootLabel, { nodeId: 'root', x: 450, y: 462, anchor: 'middle' });
+assert.equal(labelPlacement({ x: 50, y: 100 }, 'leaf').x, 200, 'labels clamp inside the artwork');
+assert.equal(labelPlacement({ x: 850, y: 100 }, 'leaf').x, 700);
 console.log('storybook tree geometry and graph-preservation tests passed');
