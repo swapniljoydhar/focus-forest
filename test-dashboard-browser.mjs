@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
+import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { emptyState, STORAGE_KEY } from './shared/state.js';
@@ -10,7 +11,10 @@ const root = new URL('.', import.meta.url);
 const manifest = JSON.parse(await readFile(new URL('manifest.json', root), 'utf8'));
 let browser;
 before(async () => {
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
+  const defaultEdge = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe';
+  const defaultChrome = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+  const executablePath = process.env.CHROMIUM_EXECUTABLE_PATH || (process.platform === 'win32' ? (fs.existsSync(defaultEdge) ? defaultEdge : fs.existsSync(defaultChrome) ? defaultChrome : undefined) : undefined);
+  browser = await chromium.launch({ executablePath });
 });
 after(async () => { await browser?.close(); });
 

@@ -1,3 +1,0 @@
-## 2026-09-09 - Set-based Date Aggregation for Streak Calculation
-**Learning:** In `getDashboardStats()`, scanning `state.sessions` with `.some()` inside a 365-day loop creates an $O(365 \times N)$ time complexity bottleneck. By building a `Set` of active ISO date keys (`YYYY-MM-DD`) during the primary single-pass loop over sessions, streak calculation lookups become $O(1)$ operations, reducing overall time complexity to $O(N + 365)$.
-**Action:** When calculating temporal aggregations over collection items, accumulate active date buckets into a `Set` or `Map` during the initial traversal instead of performing nested array scans per time window.

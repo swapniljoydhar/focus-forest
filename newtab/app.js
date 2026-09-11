@@ -70,9 +70,19 @@ form.addEventListener('submit', wrapWithErrorBoundary(async (event) => {
 
 resumeBtn.addEventListener('click', wrapWithErrorBoundary(async () => {
   try {
-    await message('GO_HOME');
+    const view = await message('GO_HOME');
     status.hidden = false;
-    status.textContent = '✓ Returning to your active session...';
+    const originUrl = view?.session?.origin?.url;
+    let hasRealDestination = false;
+    try {
+      const parsed = new URL(originUrl || '');
+      hasRealDestination = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+    } catch {}
+    if (hasRealDestination) {
+      status.textContent = '✓ Returning to your active session...';
+    } else {
+      status.textContent = 'Active intention ready — search or enter a URL to explore.';
+    }
     setTimeout(() => { status.hidden = true; }, 3000);
   } catch (err) { logError(err, { category: ERROR_CATEGORIES.MESSAGING, function: 'resumeClick' }); }
 }, { category: ERROR_CATEGORIES.MESSAGING, function: 'resume.click', swallow: true }));

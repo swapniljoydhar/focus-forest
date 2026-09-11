@@ -414,6 +414,19 @@ async function getSnapshot(sessionId = null, includeHistory = false) {
   return { state, session: selected || activeSession(state) || latest, activeSessionId: state.activeSessionId, thresholds: effectiveThresholds(state.settings), settings: normalizeSettings(state.settings) };
 }
 
+function formatHistoryDomain(url) {
+  if (!url) return 'Unknown';
+  if (isBrowserNewTabUrl(url) || isPlaceholderOriginUrl(url)) return 'New Tab';
+  if (isExtensionNewTabUrl(url)) return 'Focus Forest';
+  try {
+    const parsed = new URL(url);
+    if (/^chrome-extension:/i.test(parsed.protocol)) return 'Focus Forest';
+    return parsed.hostname || 'Unknown';
+  } catch {
+    return 'Unknown';
+  }
+}
+
 // Dashboard statistics aggregation
 async function getDashboardStats() {
   const state = await loadState();
@@ -425,7 +438,7 @@ async function getDashboardStats() {
   let totalSessions = 0;
   let totalFocusTime = 0;
   const domainCounts = {};
-  const dailyMinutes = {};
+  const dailySeconds = {};
   // Performance optimization: track unique active ISO date keys in a Set for O(1) streak lookups
   const activeDays = new Set();
   
@@ -433,7 +446,7 @@ async function getDashboardStats() {
   for (let i = 6; i >= 0; i--) {
     const date = new Date(now - (i * oneDayMs));
     const key = date.toISOString().slice(0, 10); // YYYY-MM-DD
-    dailyMinutes[key] = 0;
+    dailySeconds[key] = 0;
   }
 
   // Process all sessions
@@ -447,20 +460,25 @@ async function getDashboardStats() {
     const sessionDuration = Math.max(0, (sessionEnd - sessionStart) / 1000);
     
     for (const node of session.nodes) {
-      // Domain counting
+      // Domain counting: only count valid HTTP/HTTPS URLs
       try {
-        const hostname = new URL(node.url).hostname.toLowerCase();
-        domainCounts[hostname] = (domainCounts[hostname] || 0) + 1;
+        const parsed = new URL(node.url);
+        if (/^https?:$/i.test(parsed.protocol)) {
+          const hostname = parsed.hostname.toLowerCase();
+          if (hostname) {
+            domainCounts[hostname] = (domainCounts[hostname] || 0) + 1;
+          }
+        }
       } catch { /* ignore invalid URLs */ }
     }
     
     totalFocusTime += sessionDuration;
     
-    // Daily breakdown using ISO date key
+    // Daily breakdown using ISO date key - accumulate raw seconds first to preserve sub-minute sessions
     const dayKey = new Date(sessionStart).toISOString().slice(0, 10);
     activeDays.add(dayKey);
-    if (Object.hasOwn(dailyMinutes, dayKey)) {
-      dailyMinutes[dayKey] += Math.floor(sessionDuration / 60);
+    if (Object.hasOwn(dailySeconds, dayKey)) {
+      dailySeconds[dayKey] += sessionDuration;
     }
   }
 
@@ -478,9 +496,9 @@ async function getDashboardStats() {
   }
 
   // Format weekly data with readable day labels
-  const weeklyData = Object.entries(dailyMinutes).map(([dateKey, minutes]) => {
+  const weeklyData = Object.entries(dailySeconds).map(([dateKey, seconds]) => {
     const date = new Date(dateKey + 'T12:00:00');
-    return { day: date.toLocaleDateString(undefined, { weekday: 'short' }), date: dateKey, minutes };
+    return { day: date.toLocaleDateString(undefined, { weekday: 'short' }), date: dateKey, minutes: Math.round(seconds / 60) };
   });
 
   // Format domain data (top 5)
@@ -497,7 +515,7 @@ async function getDashboardStats() {
     
     return {
       timestamp: start,
-      domain: session.origin?.url ? (() => { try { return new URL(session.origin.url).hostname; } catch { return 'Unknown'; } })() : 'Unknown',
+      domain: formatHistoryDomain(session.origin?.url),
       duration: Math.floor(duration),
       type: 'focus'
     };
@@ -625,8 +643,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return observeTab(tab.id, message.url, typeof message.title === 'string' ? message.title : '', tab.openerTabId, tab.windowId);
       }
       case 'COMPOST': return Number.isInteger(tab?.id) ? compost(tab.id, message.url, message.title) : null;
-      case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => { const session = activeSession(state); if (!session || session.interventionPaused === message.paused) return NO_CHANGE; session.interventionPaused = message.paused; return session; }).then((result) => { if (result !== NO_CHANGE) updateBadge(); return result; }) : null;
-      case 'UPDATE_SETTINGS': return isExtensionPageSender(sender) && isRecord(message.settings) ? mutate((state) => { const next = normalizeSettings({ ...state.settings, ...message.settings }); if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE; state.settings = next; const session = activeSession(state); if (session) session.nodes.forEach((node) => { node.state = getDepthState(node.depth, session.interventionPaused, effectiveThresholds(next)); }); return state.settings; }).then((result) => { if (result !== NO_CHANGE) void syncSettingsToCloud(); return result; }) : null;
+      case 'PAUSE_INTERVENTION': return typeof message.paused === 'boolean' ? mutate((state) => {
+        const session = activeSession(state);
+        if (!session || session.interventionPaused === message.paused) return NO_CHANGE;
+        session.interventionPaused = message.paused;
+        const thresholds = effectiveThresholds(state.settings);
+        session.nodes.forEach((node) => {
+          if (!TERMINAL_STATES.has(node.state)) {
+            node.state = getDepthState(node.depth, session.interventionPaused, thresholds);
+          }
+        });
+        return session;
+      }).then((result) => { if (result !== NO_CHANGE) updateBadge(); return result; }) : null;
+      case 'UPDATE_SETTINGS': return isExtensionPageSender(sender) && isRecord(message.settings) ? mutate((state) => {
+        const next = normalizeSettings({ ...state.settings, ...message.settings });
+        if (JSON.stringify(next) === JSON.stringify(state.settings)) return NO_CHANGE;
+        state.settings = next;
+        const session = activeSession(state);
+        if (session) {
+          const thresholds = effectiveThresholds(next);
+          session.nodes.forEach((node) => {
+            if (!TERMINAL_STATES.has(node.state)) {
+              node.state = getDepthState(node.depth, session.interventionPaused, thresholds);
+            }
+          });
+        }
+        return state.settings;
+      }).then((result) => { if (result !== NO_CHANGE) void syncSettingsToCloud(); return result; }) : null;
       case 'DELETE_COMPOST': return isExtensionPageSender(sender) && safeId(message.id) ? mutate((state) => { const before = state.compostItems.length; state.compostItems = state.compostItems.filter((item) => item.id !== message.id); return before === state.compostItems.length ? NO_CHANGE : state.compostItems; }) : null;
       case 'PRUNE_NODE': return isExtensionPageSender(sender) && safeId(message.sessionId) && safeId(message.nodeId) ? pruneNode(message.sessionId, message.nodeId, Boolean(message.toCompost)) : null;
       case 'DELETE_SESSION': return isExtensionPageSender(sender) && safeId(message.sessionId) ? mutate((state) => { const before = state.sessions.length; state.sessions = state.sessions.filter((session) => session.id !== message.sessionId); if (state.activeSessionId === message.sessionId) state.activeSessionId = null; return before === state.sessions.length ? NO_CHANGE : state.sessions; }) : null;
@@ -636,7 +679,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'REMOVE_SAVED_ITEM': return isExtensionPageSender(sender) && safeId(message.id) ? removeSavedItem(message.id) : null;
       case 'EXPORT_DATA': return isExtensionPageSender(sender) ? exportAllData() : null;
       case 'IMPORT_DATA': return isExtensionPageSender(sender) && isRecord(message.payload) ? importAllData(message.payload) : null;
-      case 'CHECK_STORAGE_QUOTA': return isExtensionPageSender(sender) ? await checkStorageQuota() : null;
+      case 'CHECK_STORAGE_QUOTA': return isExtensionPageSender(sender) ? checkStorageQuota() : null;
       case 'COMPLETE_ONBOARDING': return isExtensionPageSender(sender) ? mutate((state) => { state.onboardingCompleted = true; return state; }) : null;
       case 'GO_HOME': {
         const snapshot = await getSnapshot(); const origin = snapshot.session?.origin; const originTabId = Number.isInteger(origin?.tabId) ? origin.tabId : null; const returnUrl = safeNavigationUrl(origin?.url);
@@ -665,10 +708,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 const SCHEMAS = {
-  GET_SNAPSHOT: {},
+  GET_SNAPSHOT: { sessionId: 'string?', includeHistory: 'boolean?' },
   GET_ACTIVE_VIEW: {},
-  START_MISSION: { mission: 'string' },
-  END_MISSION: {},
+  START_MISSION: { mission: 'string', tab: 'object?' },
+  END_MISSION: { reason: 'string?' },
   LINK_CLICK: { url: 'string', title: 'string?', targetBlank: 'boolean?' },
   OBSERVE_PAGE: { url: 'string', title: 'string?' },
   COMPOST: { url: 'string', title: 'string?' },

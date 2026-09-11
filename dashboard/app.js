@@ -457,15 +457,11 @@ function renderSavedItems(items) {
     container.appendChild(div);
   });
   container.querySelectorAll('.delete-saved').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', wrapWithErrorBoundary(async (e) => {
       const id = e.target.dataset.id;
-      try {
-        await message('REMOVE_SAVED_ITEM', { id });
-        loadStatsTab();
-      } catch (err) {
-        logError(err, { category: ERROR_CATEGORIES.MESSAGING, function: 'deleteSavedItem' });
-      }
-    });
+      await message('REMOVE_SAVED_ITEM', { id });
+      loadStatsTab();
+    }, { category: ERROR_CATEGORIES.MESSAGING, function: 'deleteSavedItem.click', swallow: true }));
   });
 }
 

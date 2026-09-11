@@ -125,7 +125,6 @@ class ErrorTrace {
 
 const errorLog = [];
 const MAX_LOG_SIZE = 100;
-const subscribers = new Set();
 
 export function logError(error, context = {}) {
   const trace = new ErrorTrace(error, context);
@@ -135,10 +134,6 @@ export function logError(error, context = {}) {
   if (errorLog.length > MAX_LOG_SIZE) errorLog.shift();
 
   console.error(trace.toLogString());
-
-  subscribers.forEach(cb => {
-    try { cb(trace); } catch { /* ignore subscriber errors */ }
-  });
 
   return trace;
 }
