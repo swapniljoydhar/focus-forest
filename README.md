@@ -33,16 +33,16 @@ After updating the files, click **Reload** on Focus Forest's extension card, the
 
 ```text
 focus-forest/
-  manifest.json
-  background/service-worker.js
-  content/content.js
-  shared/state.js
-  shared/error-tracing.js
-  popup/
-  newtab/
-  dashboard/
-  settings/
-  icons/
+  [manifest.json](manifest.json)
+  [background/service-worker.js](background/service-worker.js)
+  [content/content.js](content/content.js)
+  [shared/state.js](shared/state.js)
+  [shared/error-tracing.js](shared/error-tracing.js)
+  [popup/](popup/index.html)
+  [newtab/](newtab/index.html)
+  [dashboard/](dashboard/index.html)
+  [settings/](settings/index.html)
+  [icons/](icons/icon-128.png)
 ```
 
 ## Navigation semantics
