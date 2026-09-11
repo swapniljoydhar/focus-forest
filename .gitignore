@@ -70,3 +70,6 @@ htmlcov/
 
 # Kilo IDE
 .kilo/
+
+# Jules IDE
+.jules/

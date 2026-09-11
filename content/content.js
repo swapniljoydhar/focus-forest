@@ -115,6 +115,7 @@
 .choice strong{font-weight:600;font-size:13px}
 .choice small{font-size:11px;color:#6c8c68;margin-top:2px}
 @keyframes ff-slide-up{from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)}}
+`;
   shadow.append(style);
 
   const makeElement = (tag, className = '', attributes = {}, text = null) => {

@@ -147,29 +147,8 @@ export function logCritical(error, context = {}) {
   return logError(error, { ...context, severity: ERROR_SEVERITY.CRITICAL });
 }
 
-export function logHigh(error, context = {}) {
-  return logError(error, { ...context, severity: ERROR_SEVERITY.HIGH });
-}
-
 export function logWarning(error, context = {}) {
   return logError(error, { ...context, severity: ERROR_SEVERITY.LOW });
-}
-
-export function subscribeToErrors(callback) {
-  subscribers.add(callback);
-  return () => subscribers.delete(callback);
-}
-
-export function getErrorLog() {
-  return [...errorLog].map(t => t.toJSON());
-}
-
-export function getRecentErrors(count = 10) {
-  return errorLog.slice(-count).map(t => t.toJSON());
-}
-
-export function clearErrorLog() {
-  errorLog.length = 0;
 }
 
 export function wrapWithErrorBoundary(fn, context = {}) {
@@ -200,18 +179,4 @@ export function wrapMutationWithErrorBoundary(mutator, context = {}) {
   };
 }
 
-export function createTestErrorReporter(testName) {
-  return {
-    log: (error, extra = {}) => logError(error, { 
-      ...extra, 
-      category: ERROR_CATEGORIES.VALIDATION,
-      testName 
-    }),
-    wrap: (fn) => wrapWithErrorBoundary(fn, { 
-      category: ERROR_CATEGORIES.VALIDATION, 
-      testName 
-    })
-  };
-}
 
-export { ErrorTrace };

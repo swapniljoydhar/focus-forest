@@ -1,7 +1,6 @@
 import './chromium-api.js';
 import { logError, logWarning, logCritical, ERROR_CATEGORIES } from './error-tracing.js';
 
-export const THRESHOLDS = { DESATURATE: 4, INTERRUPT: 5, gentleDepth: 4, choiceDepth: 5 };
 export const STORAGE_KEY = 'focusForestState';
 export const SCHEMA_VERSION = 2;
 export const LIMITS = { SESSIONS: 12, NODES_PER_SESSION: 96, EVENTS_PER_SESSION: 72, COMPOST: 80, TITLE: 120, URL: 1024 };
