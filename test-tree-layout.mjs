@@ -103,6 +103,8 @@ const staleDepths = Array.from({ length: 13 }, (_, i) => node(`node-${i}`, 0, i 
 assert.equal(layoutTree(staleDepths).maxDepth, 12, 'stale metadata must not change the true ancestry');
 assert.deepEqual(layoutTree(canopy), layoutTree(canopy), 'all geometry and Maps must be deterministic');
 assert.equal(treeStage('invalid').mode, 'sapling');
+assert.equal(layoutTree([]).mode, 'empty', 'an empty garden stays an empty stage');
+assert.equal(layoutTree([node('root', 0), node('a', 1, 'root')]).mode, 'sapling', 'a small garden stays a sapling');
 assert.equal(branchWidth(0), 5, 'roots and shallow branches stay thick');
 assert.equal(branchWidth(1), 5);
 assert.equal(branchWidth(5), 3.6);
