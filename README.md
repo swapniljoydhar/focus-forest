@@ -16,7 +16,7 @@ Focus Forest is a Manifest V3 extension for Chromium. It loads the same unpacked
 2. Enable **Developer mode**.
 3. Choose **Load unpacked**.
 4. Select this `focus-forest` directory (the folder containing `manifest.json`).
-5. Open a new tab. Focus Forest replaces Chrome's new tab and Brave's dashboard with the planting page. You do not need to turn Shields off.
+5. Open a new tab. Focus Forest replaces the browser's new tab page with the planting page. You do not need to turn Shields off.
 
 After updating the files, click **Reload** on Focus Forest's extension card, then reopen the garden and refresh existing web pages so they receive the updated companion script.
 
@@ -49,7 +49,17 @@ focus-forest/
 
 The origin is the first ordinary webpage after a mission is planted. A link activated in a tracked page creates one branch level. A new tab opened from a tracked page waits until the destination loads, then attaches exactly once using the opener relationship or a short-lived pending-link relationship. Unrelated tabs remain outside the tree.
 
-Manually entered URLs, bookmarks, and other unlinked navigations are recorded as neutral external paths when they occur inside a tracked tab; they do not automatically become deeper distractions. Returning to a known URL reuses its existing node instead of creating artificial depth. Chrome cannot expose every semantic relationship, so the extension records confidence internally and remains intentionally humble about what it knows.
+Manually entered URLs, bookmarks, and other unlinked navigations are recorded as neutral external paths when they occur inside a tracked tab; they do not automatically become deeper distractions. Returning to a known URL reuses its existing node instead of creating artificial depth. Browsers cannot expose every semantic relationship, so the extension records confidence internally and remains intentionally humble about what it knows.
+
+## Browser compatibility
+
+Focus Forest targets desktop Chromium browsers: **Chrome, Brave, Edge, Opera, and Vivaldi**.
+
+- Supported via guarded `chrome.*` calls (`tabs`, `storage`, `alarms`, `contextMenus`, `webNavigation`, `commands`); every cross-browser-uncertain call uses optional chaining or an existence check, and `browser.*` is aliased to `chrome.*` where present (`shared/chromium-api.js`).
+- No Google-only APIs are used: no `chrome.gcm`, `chrome.instanceID`, `identity.getAuthToken`, or `sidePanel`. There is no `update_url` override to port.
+- `chrome.storage.sync` is a best-effort settings mirror only; core state lives in `chrome.storage.local`, so Brave/Edge local-only sync changes nothing about functionality.
+- Install per browser: `chrome://extensions`, `brave://extensions`, `edge://extensions`, `opera://extensions`, `vivaldi://extensions` → Developer mode → Load unpacked.
+- Known limitation: Brave, Edge, and Opera may ask to confirm replacing their new-tab page; Brave Shields can stay on.
 
 ## Privacy
 
@@ -110,7 +120,7 @@ npx playwright install chromium
 npm run test:dashboard
 ```
 
-The fast suite includes tree geometry, deep-branch bounds, and malformed-parent regressions. The dashboard suite uses Chromium to check first-load visibility, tab switching, live garden updates, leaf selection, dense-canopy page picking, the shared New Tab illustration, the companion under a Trusted Types CSP, and narrow screens against the real HTML/CSS/modules and extension CSP. Only Chrome messaging and storage events are mocked; these UI tests do not replace loading the unpacked extension for end-to-end navigation testing. Playwright is development-only; the extension still loads without a build step or runtime dependencies. An existing Chromium binary can be selected with `CHROMIUM_EXECUTABLE_PATH`.
+The fast suite includes tree geometry, deep-branch bounds, and malformed-parent regressions. The dashboard suite uses Chromium to check first-load visibility, tab switching, live garden updates, leaf selection, dense-canopy page picking, the shared New Tab illustration, the companion under a Trusted Types CSP, and narrow screens against the real HTML/CSS/modules and extension CSP. Only Chromium messaging and storage events are mocked; these UI tests do not replace loading the unpacked extension for end-to-end navigation testing. Playwright is development-only; the extension still loads without a build step or runtime dependencies. An existing Chromium binary can be selected with `CHROMIUM_EXECUTABLE_PATH`.
 
 ### Preview the tree artwork
 

@@ -21,6 +21,17 @@ const empty = document.querySelector('#empty');
 const active = document.querySelector('#active');
 const completion = document.querySelector('#completion');
 const footer = document.querySelector('#popup-footer');
+const missionEl = document.querySelector('#mission');
+const stateEl = document.querySelector('#state');
+const depthLabelEl = document.querySelector('#depth-label');
+const meterFillEl = document.querySelector('#meter-fill');
+const nodesEl = document.querySelector('#nodes');
+const compostEl = document.querySelector('#compost');
+const pauseEl = document.querySelector('#pause');
+const completeBtn = document.querySelector('#complete');
+const completionCopyEl = document.querySelector('#completion-copy');
+const completionTitleEl = document.querySelector('#completion-title');
+const endBtn = document.querySelector('#end');
 
 const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
 
@@ -43,11 +54,15 @@ function reflectionFor(session) {
   };
 }
 
+function updatePauseCopy(paused) {
+  pauseEl.textContent = paused ? 'Resume the forest' : 'Pause interventions';
+}
+
 function setRitual(open) {
   completion.hidden = !open;
   footer.hidden = open;
   if (open) {
-    document.querySelector('#complete').focus();
+    completeBtn.focus();
   } else if (ritualReturnFocus) {
     ritualReturnFocus.focus();
   }
@@ -80,16 +95,15 @@ async function render() {
           ? `A healthy branch, ${depth} ${depth === 1 ? 'step' : 'steps'} from the root.`
           : 'Growing from the root of your mission.';
 
-  document.querySelector('#mission').textContent = session.mission;
-  document.querySelector('#state').textContent = state;
-  document.querySelector('#depth-label').textContent = `Deepest branch ${reflection.deepest}`;
-  document.querySelector('#meter-fill').style.width = `${clamp((reflection.deepest / thresholds.INTERRUPT) * 100, 4, 100)}%`;
-  document.querySelector('#nodes').textContent = session.nodes.length;
-  document.querySelector('#compost').textContent = snap.state.compostItems.length;
+  missionEl.textContent = session.mission;
+  stateEl.textContent = state;
+  depthLabelEl.textContent = `Deepest branch ${reflection.deepest}`;
+  meterFillEl.style.width = `${clamp((reflection.deepest / thresholds.INTERRUPT) * 100, 4, 100)}%`;
+  nodesEl.textContent = session.nodes.length;
+  compostEl.textContent = snap.state.compostItems.length;
 
-  const pause = document.querySelector('#pause');
-  pause.textContent = session.interventionPaused ? 'Resume the forest' : 'Pause interventions';
-  pause.setAttribute('aria-pressed', String(Boolean(session.interventionPaused)));
+  updatePauseCopy(session.interventionPaused);
+  pauseEl.setAttribute('aria-pressed', String(Boolean(session.interventionPaused)));
 }
 
 function renderSafely() {
@@ -131,7 +145,7 @@ document.querySelector('#open-planting').addEventListener('click', wrapWithError
 
 document.querySelector('#return').addEventListener('click', wrapWithErrorBoundary(() => message('GO_HOME'), { category: ERROR_CATEGORIES.MESSAGING, function: 'return.click', swallow: true }));
 
-document.querySelector('#pause').addEventListener('click', wrapWithErrorBoundary(async () => {
+pauseEl.addEventListener('click', wrapWithErrorBoundary(async () => {
   const snap = await message('GET_SNAPSHOT');
   if (!snap?.session) return;
   await message('PAUSE_INTERVENTION', { paused: !snap.session.interventionPaused });
@@ -142,17 +156,17 @@ document.querySelector('#dashboard').addEventListener('click', wrapWithErrorBoun
 
 document.querySelector('#settings').addEventListener('click', wrapWithErrorBoundary(() => chrome.runtime.openOptionsPage(), { category: ERROR_CATEGORIES.UI_RENDER, function: 'settings.click', swallow: true }));
 
-document.querySelector('#end').addEventListener('click', wrapWithErrorBoundary(() => {
+endBtn.addEventListener('click', wrapWithErrorBoundary(() => {
   if (!latest) return;
-  ritualReturnFocus = document.querySelector('#end');
+  ritualReturnFocus = endBtn;
   const reflection = reflectionFor(latest);
-  document.querySelector('#completion-copy').textContent = reflection.copy;
-  document.querySelector('#completion-title').textContent = reflection.deepest >= 4 ? 'This garden has a long path to remember.' : 'This garden can rest now.';
+  completionCopyEl.textContent = reflection.copy;
+  completionTitleEl.textContent = reflection.deepest >= 4 ? 'This garden has a long path to remember.' : 'This garden can rest now.';
   active.hidden = true;
   setRitual(true);
 }, { category: ERROR_CATEGORIES.UI_RENDER, function: 'end.click', swallow: true }));
 
-document.querySelector('#complete').addEventListener('click', wrapWithErrorBoundary(async () => {
+completeBtn.addEventListener('click', wrapWithErrorBoundary(async () => {
   await message('END_MISSION', { reason: 'user_ended' });
   ritualReturnFocus = null;
   await renderSafely();
